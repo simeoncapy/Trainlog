@@ -222,6 +222,7 @@ from src.trips import (
     update_trip_type,
     attach_ticket_to_trips,
     delete_ticket_from_db
+    fetch_trips_paths
 )
 from src.paths import Path
 from src.carbon import *
@@ -5290,14 +5291,14 @@ def fetchTripsPaths(username, lastLocal, public):
 @app.route("/public/<username>/getTripsPaths/<lastLocal>", methods=["GET", "POST"])
 @public_required  # Public access check
 def public_getTripsPaths(username, lastLocal):
-    result = fetchTripsPaths(username, lastLocal, public=1)
+    result = fetch_trips_paths(username, lastLocal, public=1)
     return jsonify(result)
 
 
 @app.route("/<username>/getTripsPaths/<lastLocal>", methods=["GET", "POST"])
 @login_required  # Login access check
 def getTripsPaths(username, lastLocal):
-    result = fetchTripsPaths(username, lastLocal, public=0)
+    result = fetch_trips_paths(username, lastLocal, public=0)
     return jsonify(result)
 
 
