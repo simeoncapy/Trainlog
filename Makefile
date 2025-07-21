@@ -22,6 +22,10 @@ start-db:
 start-local: start-db
 	env $$(cat .env | xargs) POSTGRES_HOST=localhost FLASK_APP=app gunicorn --timeout 1000 --bind 0.0.0.0:5000 app:app --reload --access-logfile - --access-logformat '%(h)s %(r)s %(s)s'
 
+# run trip sync + comparison
+sync-trips:
+	env $(cat .env | xargs) POSTGRES_HOST=localhost python -c "from src.db_sync import sync_db_from_sqlite; sync_db_from_sqlite()"
+
 # stop all containers
 stop:
 	docker compose down
