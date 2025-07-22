@@ -77,7 +77,7 @@ async function saveTrip(continueTrip=false){
         },
         success:function(res){
             if (!continueTrip || newTrip.precision != "preciseDates"){
-                location.href = "{{ url_for('user_home', username=username) }}";
+                location.href = "{{ url_for('landing') }}";
             }
             else{
                 location.href = `{{ url_for('new', username=username, vehicle_type='') }}${type}?prevDest=${newTrip["destinationStation"]}&prevEndDate=${newTrip["newTripEndDate"]}&prevEndTime=${newTrip["newTripEndTime"]}`;

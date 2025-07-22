@@ -202,7 +202,7 @@
                 jsonPath:JSON.stringify(path)
             },
             success: function(res) {
-                location.href = "{{ url_for('user_home', username=username) }}";
+                location.href = "{{ url_for('landing') }}";
             },
             error: function() {
                 sidebar.setContent(saveErrorContent);

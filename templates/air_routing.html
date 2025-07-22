@@ -192,7 +192,7 @@ async function saveTrip() {
             newTrip: JSON.stringify(newTrip),
             jsonPath: JSON.stringify(pathToSave)
         },
-        success: () => location.href = "{{ url_for('user_home', username=username) }}",
+        success: () => location.href = "{{ url_for('landing') }}",
         error: () => sidebar.setContent("<h4>{{saveError}}</h4><p>{{saveErrorDetails}}</p><p><button onclick='location.reload()'>{{retry}}</button></p>")
     });
 }
