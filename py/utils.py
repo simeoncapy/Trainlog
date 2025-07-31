@@ -1,4 +1,3 @@
-import imghdr
 import json
 import math
 import os
@@ -168,6 +167,8 @@ def getRequestData(request):
 # Helper function to validate the PNG file
 def validate_png_file(file):
     MAX_FILE_SIZE = 1 * 1024 * 1024  # 1 MB in bytes
+    PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
     if not file:
         raise Exception("No file provided")
 
@@ -179,7 +180,9 @@ def validate_png_file(file):
 
     # Check if the file is indeed a PNG by reading its header
     file.seek(0)  # Reset file pointer to the start for imghdr
-    if imghdr.what(None, h=file.stream.read()) != "png":
+
+    header = file.stream.read(8)
+    if not header.startswith(PNG_SIGNATURE):
         raise Exception("File is broken or not a PNG")
 
     # Check the file size

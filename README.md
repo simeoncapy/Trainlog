@@ -18,8 +18,8 @@ If you want to use pyenv to manage your Python virtual environment, you can auto
 it for the trainlog folder with:
 
 ```bash
-pyenv install 3.9.18
-pyenv virtualenv 3.9.18 trainlog
+pyenv install 3.13
+pyenv virtualenv 3.13 trainlog
 pyenv local trainlog
 pip install -r requirements.txt
 ```
@@ -127,4 +127,4 @@ make start-local
 
 - **Security**: Ensure that the `config.yaml` file is secured with the right file permissions and is not publicly accessible. Keep it out of version control to prevent accidentally exposing sensitive details.
 - **Placeholder Configuration**: Do not use the `config-example.yaml` as is for the application. Always create a copy and provide real values.
-- **Supported Python version**: currently Python 3.9, but not 3.10 (that would need some refactoring due to breaking changes in used libraries)
+- **Supported Python version**: Currently Python 3.13.x
