@@ -3521,53 +3521,98 @@ def multi_trip(tripIds):
     )
 
 
-def convert_path_to_format(path, output_format):
+def convert_path_to_format(path, output_format, utc_start_datetime=None, utc_end_datetime=None):
     """
     Convert the path data to the specified format (GPX or GeoJSON).
+    For GPX format, includes timing information if start/end times are provided.
     """
     # Load path data from JSON
     coordinates = json.loads(path)
-
+    
     if output_format == "gpx":
         # Create the GPX root element
         gpx = ET.Element("gpx", version="1.1", creator="Trainlog.me")
-
+        
         # Create a GPX 'trk' (track) element
         trk = ET.SubElement(gpx, "trk")
         trk_name = ET.SubElement(trk, "name")
         trk_name.text = "Trip Path"
-
+        
         # Create a 'trkseg' (track segment) and add 'trkpt' (track points) elements
         trkseg = ET.SubElement(trk, "trkseg")
-
-        # Assuming 'coordinates' contains a list of lat, lon pairs
-        # TODO check if this code is needed, it looks like it does nothing as the
-        # variable is not read anywhere
-        for point in coordinates:
-            _trkpt = ET.SubElement(
+        
+        # Calculate timing if both start and end times are provided
+        timestamps = None
+        if utc_start_datetime and utc_end_datetime and len(coordinates) > 1:
+            from datetime import datetime, timezone
+            import dateutil.parser
+            
+            # Parse the datetime strings if they're strings
+            if isinstance(utc_start_datetime, str):
+                start_time = dateutil.parser.parse(utc_start_datetime)
+            else:
+                start_time = utc_start_datetime
+                
+            if isinstance(utc_end_datetime, str):
+                end_time = dateutil.parser.parse(utc_end_datetime)
+            else:
+                end_time = utc_end_datetime
+            
+            # Ensure timezone info (assume UTC if none provided)
+            if start_time.tzinfo is None:
+                start_time = start_time.replace(tzinfo=timezone.utc)
+            if end_time.tzinfo is None:
+                end_time = end_time.replace(tzinfo=timezone.utc)
+            
+            # Calculate time intervals assuming constant speed
+            total_duration = end_time - start_time
+            num_intervals = len(coordinates) - 1
+            time_per_interval = total_duration / num_intervals
+            
+            # Generate timestamps for each coordinate
+            timestamps = []
+            for i in range(len(coordinates)):
+                timestamp = start_time + (time_per_interval * i)
+                timestamps.append(timestamp.isoformat())
+        
+        # Add track points with optional timing
+        for i, point in enumerate(coordinates):
+            trkpt = ET.SubElement(
                 trkseg, "trkpt", lat=str(point[0]), lon=str(point[1])
             )
-
+            
+            # Add timestamp if available
+            if timestamps and i < len(timestamps):
+                time_elem = ET.SubElement(trkpt, "time")
+                time_elem.text = timestamps[i]
+        
         # Convert the ElementTree to a string in GPX format
         output = ET.tostring(gpx, encoding="utf-8", method="xml").decode("utf-8")
-
+        
     elif output_format == "geojson":
         # Convert to GeoJSON LineString format
         # GeoJSON requires coordinates in [lon, lat] format
         geojson_line = geojson.LineString(
             [(point[1], point[0]) for point in coordinates]
         )
-
+        
         # Create the FeatureCollection containing the LineString
         feature = geojson.Feature(geometry=geojson_line)
+        
+        # Add timing properties if available
+        if utc_start_datetime and utc_end_datetime:
+            feature.properties = {
+                "start_time": utc_start_datetime,
+                "end_time": utc_end_datetime
+            }
+        
         feature_collection = geojson.FeatureCollection([feature])
-
+        
         # Convert FeatureCollection to GeoJSON string
         output = geojson.dumps(feature_collection)
-
     else:
         raise ValueError("Unsupported format")
-
+    
     return output
 
 
@@ -3591,7 +3636,6 @@ def download_path(trip_ids):
     Download one or more paths in the specified format (GPX or GeoJSON) for
     the given trip_ids (comma-separated).
     """
-
     # Determine requested format based on the path
     if request.path.startswith("/gpx"):
         format_type = "gpx"
@@ -3603,16 +3647,16 @@ def download_path(trip_ids):
         mimetype = "application/geo+json"
     else:
         abort(400, description="Unsupported format")
-
+    
     # Split the incoming <trip_ids> on commas
     trip_id_list = trip_ids.split(",")
-
+    
     # Prepare a list to store (trip_id, generated_file_data) tuples
     files_to_zip = []
-
+    
     for trip_id in trip_id_list:
         trip_id = trip_id.strip()  # Just to be safe
-
+        
         # 1) Check if the trip exists + permission logic
         with managed_cursor(mainConn) as cursor:
             trip = cursor.execute(getTrip, {"trip_id": trip_id}).fetchone()
@@ -3627,54 +3671,56 @@ def download_path(trip_ids):
                     abort(401, description=f"Unauthorized for trip_id={trip_id}")
             else:
                 abort(410, description=f"Trip with id={trip_id} is gone")
-
+        
         # 2) Retrieve the path from the database
         with managed_cursor(pathConn) as cursor:
             cursor.execute("SELECT path FROM paths WHERE trip_id = ?", (trip_id,))
             path = cursor.fetchone()
-
+            
         if path is None:
             abort(404, description=f"Path not found for trip_id={trip_id}")
-
-        # 3) Convert the path to the requested format
-        output_data = convert_path_to_format(path["path"], format_type)
-
+        
+        # 3) Convert the path to the requested format with timing information
+        output_data = convert_path_to_format(
+            path["path"], 
+            format_type,
+            utc_start_datetime=trip["utc_start_datetime"],
+            utc_end_datetime=trip["utc_end_datetime"]
+        )
+        
         # 4) Store (trip_id, file contents) for later use
         files_to_zip.append(
             (trip_id, trip["origin_station"], trip["destination_station"], output_data)
         )
-
+    
     if len(files_to_zip) == 1:
         # files_to_zip[0] is assumed to be a tuple like:
         # (trip_id, origin, destination, file_contents)
         single_id, single_origin, single_destination, single_data = files_to_zip[0]
-
         output_io = BytesIO()
         output_io.write(single_data.encode("utf-8"))
         output_io.seek(0)
-
+        
         return send_file(
             output_io,
             as_attachment=True,
             download_name=sanitize_filename(
-                f"{single_origin} -{single_destination}-{single_id}.{file_extension}"
+                f"{single_origin} - {single_destination} - {single_id}.{file_extension}"
             ),
             mimetype=mimetype,
         )
-
+    
     # Otherwise, zip up all files.
     from datetime import datetime
-
     zip_buffer = BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         for trip_id, origin, destination, data in files_to_zip:
             filename = sanitize_filename(
-                f"{origin} -{destination}-{trip_id}.{file_extension}"
+                f"{origin} - {destination} - {trip_id}.{file_extension}"
             )
             zf.writestr(filename, data)
-
+    
     zip_buffer.seek(0)
-
     return send_file(
         zip_buffer,
         as_attachment=True,
