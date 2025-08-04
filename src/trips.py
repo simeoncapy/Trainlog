@@ -29,6 +29,9 @@ from src.utils import (
     processDates,
     sendOwnerEmail,
 )
+from src.robust_sqlite_handler import initialize_sqlite_handler, robust_coordinated_transaction, robust_single_transaction
+
+initialize_sqlite_handler(mainConn, pathConn)
 
 logger = logging.getLogger(__name__)
 
@@ -146,168 +149,33 @@ def create_trip(trip: Trip, pg_session=None):
     logger.info(f"Successfully created trip {trip.trip_id}")
 
 
-def _create_trip_in_sqlite(trip: Trip):
-    """
-    Temporary function to write trips in sqlite
-    Will be replaced by PG eventually
-    """
-    saveTripQuery = """
-        INSERT INTO trip (
-            'username',
-            'origin_station',
-            'destination_station',
-            'start_datetime',
-            'end_datetime',
-            'trip_length',
-            'estimated_trip_duration',
-            'manual_trip_duration',
-            'operator',
-            'countries',
-            'utc_start_datetime',
-            'utc_end_datetime',
-            'created',
-            'last_modified',
-            'line_name',
-            'type',
-            'material_type',
-            'seat',
-            'reg',
-            'waypoints',
-            'notes',
-            'price',
-            'currency',
-            'purchasing_date',
-            'ticket_id'
-        ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-        ) RETURNING uid;
-    """
-    if trip.start_datetime is None:
-        start_datetime = 1 if trip.is_project else -1
-    else:
-        start_datetime = trip.start_datetime
-    if trip.end_datetime is None:
-        end_datetime = 1 if trip.is_project else -1
-    else:
-        end_datetime = trip.end_datetime
-
-    try:
-        # Begin transactions in both databases
-        mainConn.execute("BEGIN TRANSACTION")
-        with managed_cursor(mainConn) as cursor:
-            cursor.execute(
-                saveTripQuery,
-                (
-                    trip.username,
-                    trip.origin_station,
-                    trip.destination_station,
-                    start_datetime,
-                    end_datetime,
-                    trip.trip_length,
-                    trip.estimated_trip_duration,
-                    trip.manual_trip_duration,
-                    trip.operator,
-                    trip.countries,
-                    trip.utc_start_datetime,
-                    trip.utc_end_datetime,
-                    trip.created,
-                    trip.last_modified,
-                    trip.line_name,
-                    trip.type,
-                    trip.material_type,
-                    trip.seat,
-                    trip.reg,
-                    trip.waypoints,
-                    trip.notes,
-                    trip.price,
-                    trip.currency,
-                    trip.purchasing_date,
-                    trip.ticket_id,
-                ),
-            )
-            # Retrieve the trip_id directly from the INSERT statement
-            trip_id = cursor.fetchone()[0]
-
-        # Prepare the path data with the obtained trip_id
-        if isinstance(trip.path, Path):
-            path = trip.path
-        else:
-            path = Path(path=trip.path, trip_id=trip_id)
-
-        # Use your existing saveQuery template for the path
-        savePathQuery = saveQuery.format(
-            table="paths",
-            keys="({})".format(", ".join(path.keys())),
-            values=", ".join(["?"] * len(path.keys())),
-        )
-
-        pathConn.execute("BEGIN TRANSACTION")
-        with managed_cursor(pathConn) as cursor:
-            cursor.execute(savePathQuery, path.values())
-
-        # Commit both transactions
-        mainConn.commit()
-        pathConn.commit()
-
-        return trip_id
-    except Exception as e:
-        # Rollback both transactions in case of error
-        mainConn.rollback()
-        pathConn.rollback()
-        # Optionally, log the error or handle it as needed
-        raise e
-
-
 def duplicate_trip(trip_id: int):
-    with pg_session() as pg:
+    """
+    Duplicates a trip in both SQLite and PostgreSQL databases.
+    """
+    try:
         new_trip_id = _duplicate_trip_in_sqlite(trip_id)
-        pg.execute(
-            duplicate_trip_query(),
-            {
-                "trip_id": trip_id,
-                "new_trip_id": new_trip_id,
-            },
-        )
+        if new_trip_id is None:
+            logger.error(f"Failed to duplicate trip {trip_id} - original trip not found")
+            return None
+            
+        with pg_session() as pg:
+            pg.execute(
+                duplicate_trip_query(),
+                {
+                    "trip_id": trip_id,
+                    "new_trip_id": new_trip_id,
+                },
+            )
 
-    compare_trip(trip_id)
-    compare_trip(new_trip_id)
-    logger.info(f"Successfully duplicated trip {trip_id} into {new_trip_id}")
-    return new_trip_id
-
-
-def _duplicate_trip_in_sqlite(trip_id):
-    with managed_cursor(mainConn) as cursor:
-        # Fetch the column names
-        cursor.execute("PRAGMA table_info(trip)")
-        columns = cursor.fetchall()
-        column_names = [col[1] for col in columns if col[1] != "uid"]
-
-        # Fetch the row to duplicate
-        cursor.execute("SELECT * FROM trip WHERE uid = ?", (trip_id,))
-        row_to_duplicate = cursor.fetchone()
-
-        if row_to_duplicate:
-            # Create a new row with the new UID
-            row_to_duplicate = list(row_to_duplicate)
-            row_to_duplicate.pop(0)
-
-            # Construct the INSERT statement dynamically
-            columns_str = ", ".join(column_names)
-            placeholders = ", ".join(["?"] * len(column_names))
-            insert_query = f"INSERT INTO trip ({columns_str}) VALUES ({placeholders})"
-            cursor.execute(insert_query, row_to_duplicate)
-            new_trip_id = cursor.lastrowid
-    with managed_cursor(pathConn) as cursor:
-        cursor.execute("select path from paths where trip_id = ?", (trip_id,))
-        path_to_duplicate = cursor.fetchone()["path"]
-        cursor.execute(
-            "insert into paths (trip_id, path) VALUES (?, ?)",
-            (new_trip_id, path_to_duplicate),
-        )
-    mainConn.commit()
-    pathConn.commit()
-    return new_trip_id
+        compare_trip(trip_id)
+        compare_trip(new_trip_id)
+        logger.info(f"Successfully duplicated trip {trip_id} into {new_trip_id}")
+        return new_trip_id
+        
+    except Exception as e:
+        logger.error(f"Failed to duplicate trip {trip_id}: {e}")
+        raise
 
 
 def update_trip(trip_id: int, trip: Trip, formData=None, updateCreated=False):
@@ -349,103 +217,6 @@ def update_trip(trip_id: int, trip: Trip, formData=None, updateCreated=False):
     logger.info(f"Successfully updated trip {trip_id}")
 
 
-def _update_trip_in_sqlite(
-    formData,
-    last_modified,
-    tripId=None,
-    updateCreated=False,
-):
-    if tripId is None:
-        tripId = formData["trip_id"]
-
-    with managed_cursor(mainConn) as cursor:
-        cursor.execute(
-            "SELECT username FROM trip WHERE uid = :trip_id", {"trip_id": tripId}
-        )
-        row = cursor.fetchone()
-
-        if row is None:
-            abort(404)  # Trip does not exist
-        elif getUser() not in (row["username"], owner):
-            abort(404)  # Trip does not belong to the user
-
-    formattedGetUserLines = getUserLines.format(trip_ids=tripId)
-    with managed_cursor(pathConn) as cursor:
-        pathResult = cursor.execute(formattedGetUserLines).fetchone()
-
-    if "path" in formData.keys():
-        path = [[coord["lat"], coord["lng"]] for coord in json.loads(formData["path"])]
-    else:
-        path = json.loads(pathResult["path"])
-
-    limits = [
-        {
-            "lat": path[0][0],
-            "lng": path[0][1],
-        },
-        {
-            "lat": path[-1][0],
-            "lng": path[-1][1],
-        },
-    ]
-
-    (
-        manual_trip_duration,
-        start_datetime,
-        end_datetime,
-        utc_start_datetime,
-        utc_end_datetime,
-    ) = processDates(formData, limits)
-    updateData = {
-        "trip_id": tripId,
-        "manual_trip_duration": manual_trip_duration,
-        "origin_station": formData["origin_station"],
-        "destination_station": formData["destination_station"],
-        "start_datetime": start_datetime,
-        "end_datetime": end_datetime,
-        "utc_start_datetime": utc_start_datetime,
-        "utc_end_datetime": utc_end_datetime,
-        "operator": formData["operator"],
-        "line_name": formData["lineName"],
-        "material_type": formData["material_type"],
-        "reg": formData["reg"],
-        "seat": formData["seat"],
-        "notes": formData["notes"],
-        "last_modified": last_modified,
-        "price": formData["price"],
-        "currency": formData.get("currency") if formData["price"] != "" else None,
-        "ticket_id": formData.get("ticket_id"),
-        "purchasing_date": formData.get("purchasing_date")
-        if formData["price"] != ""
-        else None,
-    }
-
-    if updateCreated:
-        updateData["created"] = datetime.datetime.now()
-
-    if "estimated_trip_duration" in formData and "trip_length" in formData:
-        updateData["countries"] = getCountriesFromPath(
-            [{"lat": coord[0], "lng": coord[1]} for coord in path], formData["type"]
-        )
-        updateData["estimated_trip_duration"] = formData["estimated_trip_duration"]
-        updateData["trip_length"] = formData["trip_length"]
-    if "waypoints" in formData:
-        updateData["waypoints"] = formData["waypoints"]
-
-    formatted_values = [
-        (value + " = :" + value) for value in updateData if value != "trip_id"
-    ]
-    formattedUpdateQuery = updateTripQuery.format(values=", ".join(formatted_values))
-
-    with managed_cursor(mainConn) as cursor:
-        cursor.execute(formattedUpdateQuery, {**updateData})
-    if path:
-        with managed_cursor(pathConn) as cursor:
-            cursor.execute(updatePath, {"trip_id": int(tripId), "path": str(path)})
-        pathConn.commit()
-    mainConn.commit()
-
-
 def delete_trip(trip_id: int, username: str):
     with pg_session() as pg:
         _delete_trip_in_sqlite(username, trip_id)
@@ -455,138 +226,12 @@ def delete_trip(trip_id: int, username: str):
     logger.info(f"Successfully deleted trip {trip_id}")
 
 
-def _delete_trip_in_sqlite(username, tripId):
-    with managed_cursor(mainConn) as cursor:
-        # Check ownership
-        cursor.execute(
-            "SELECT username FROM trip WHERE uid = :trip_id",
-            {"trip_id": tripId},
-        )
-        row = cursor.fetchone()
-
-        if row is None:
-            abort(404)  # Trip does not exist
-        elif row["username"] != username:
-            abort(404)  # Trip exists but doesn't belong to the user
-
-        # Delete only if the trip exists and belongs to the user
-        cursor.execute("DELETE FROM trip WHERE uid = :trip_id", {"trip_id": tripId})
-        cursor.execute(
-            "DELETE FROM tags_associations WHERE trip_id = :trip_id",
-            {"trip_id": tripId},
-        )
-
-    with managed_cursor(pathConn) as cursor:
-        cursor.execute(deletePathQuery, {"trip_id": tripId})
-    mainConn.commit()
-    pathConn.commit()
-
-
-def update_trip_type(trip_id, new_type: TripTypes):
+def update_trip_type(trip_id, new_type):
     with pg_session() as pg:
         update_trip_type_in_sqlite(trip_id, new_type)
         pg.execute(
             update_trip_type_query(), {"trip_id": trip_id, "trip_type": new_type.value}
         )
-
-
-def update_trip_type_in_sqlite(trip_id, new_type: TripTypes):
-    with managed_cursor(mainConn) as cursor:
-        cursor.execute(
-            "UPDATE trip SET type = :newType WHERE uid = :tripId",
-            {"newType": new_type.value, "tripId": trip_id},
-        )
-    mainConn.commit()
-
-
-def delete_ticket_from_db(username, ticket_id):
-    try:
-        trip_ids = []
-
-        with managed_cursor(mainConn) as cursor:
-            # Check ticket ownership
-            cursor.execute(
-                "SELECT 1 FROM tickets WHERE username = ? AND uid = ?",
-                (username, ticket_id),
-            )
-            if cursor.fetchone() is None:
-                abort(401)
-
-            # Check trip ownership
-            cursor.execute(
-                "SELECT uid FROM trip WHERE username = ? AND ticket_id = ?",
-                (username, ticket_id),
-            )
-            trip_ids = [row["uid"] for row in cursor.fetchall()]
-
-            cursor.execute(
-                "UPDATE trip SET ticket_id = NULL WHERE username = ? AND ticket_id = ?",
-                (username, ticket_id),
-            )
-            cursor.execute(
-                "DELETE FROM tickets WHERE username = ? AND uid = ?",
-                (username, ticket_id),
-            )
-
-        with pg_session() as pg:
-            for trip_id in trip_ids:
-                pg.execute(update_ticket_null_query(), {"trip_id": trip_id})
-        for trip_id in trip_ids:
-            compare_trip(trip_id)
-
-        mainConn.commit()
-        return True, None
-    except Exception as e:
-        mainConn.rollback()
-        return False, str(e)
-
-
-def attach_ticket_to_trips(username, ticket_id, trip_ids):
-    try:
-        placeholders = ", ".join(["?"] * len(trip_ids))
-
-        with managed_cursor(mainConn) as cursor:
-            # Check ticket ownership
-            cursor.execute(
-                "SELECT 1 FROM tickets WHERE username = ? AND uid = ?",
-                (username, ticket_id),
-            )
-            if cursor.fetchone() is None:
-                abort(401)
-
-            # Check all trip ownership
-            cursor.execute(
-                f"""
-                SELECT COUNT(*) as c FROM trip 
-                WHERE username = ? AND uid IN ({placeholders})
-                """,
-                [username] + trip_ids,
-            )
-            count = cursor.fetchone()["c"]
-            if count != len(trip_ids):
-                abort(401)
-
-            cursor.execute(
-                f"""
-                UPDATE trip SET ticket_id = ? 
-                WHERE username = ? AND uid IN ({placeholders})
-                """,
-                [ticket_id, username] + trip_ids,
-            )
-
-        with pg_session() as pg:
-            for trip_id in trip_ids:
-                pg.execute(
-                    attach_ticket_query(), {"trip_id": trip_id, "ticket_id": ticket_id}
-                )
-        for trip_id in trip_ids:
-            compare_trip(trip_id)
-
-        mainConn.commit()
-        return True, None
-    except Exception as e:
-        mainConn.rollback()
-        return False, str(e)
 
 
 def ensure_values_equal(sqlite_trip, pg_trip, property_name):
@@ -761,3 +406,384 @@ def compare_trip(trip_id: int):
         if "127.0.0.1" not in request.url and "localhost" not in request.url:
             msg = ""
             sendOwnerEmail("Error : " + str(e), msg)
+
+def _create_trip_in_sqlite(trip: Trip):
+    """
+    Writes a trip and its associated path to separate SQLite databases
+    within a single, atomic coordinated transaction.
+    """
+    saveTripQuery = """
+        INSERT INTO trip (
+            'username', 'origin_station', 'destination_station', 'start_datetime',
+            'end_datetime', 'trip_length', 'estimated_trip_duration', 'manual_trip_duration',
+            'operator', 'countries', 'utc_start_datetime', 'utc_end_datetime',
+            'created', 'last_modified', 'line_name', 'type', 'material_type',
+            'seat', 'reg', 'waypoints', 'notes', 'price', 'currency',
+            'purchasing_date', 'ticket_id'
+        ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        ) RETURNING uid;
+    """
+    
+    # Handle optional datetime fields
+    start_datetime = 1 if trip.is_project else -1 if trip.start_datetime is None else trip.start_datetime
+    end_datetime = 1 if trip.is_project else -1 if trip.end_datetime is None else trip.end_datetime
+
+    try:
+        # Use coordinated transaction across both databases
+        with robust_coordinated_transaction("main", "path") as cursors:
+            main_cursor = cursors["main"]
+            path_cursor = cursors["path"]
+            
+            # Insert trip and get the ID
+            main_cursor.execute(
+                saveTripQuery,
+                (
+                    trip.username,
+                    trip.origin_station,
+                    trip.destination_station,
+                    start_datetime,
+                    end_datetime,
+                    trip.trip_length,
+                    trip.estimated_trip_duration,
+                    trip.manual_trip_duration,
+                    trip.operator,
+                    trip.countries,
+                    trip.utc_start_datetime,
+                    trip.utc_end_datetime,
+                    trip.created,
+                    trip.last_modified,
+                    trip.line_name,
+                    trip.type,
+                    trip.material_type,
+                    trip.seat,
+                    trip.reg,
+                    trip.waypoints,
+                    trip.notes,
+                    trip.price,
+                    trip.currency,
+                    trip.purchasing_date,
+                    trip.ticket_id,
+                ),
+            )
+            trip_id = main_cursor.fetchone()[0]
+
+            # Prepare the path data with the new trip_id
+            if isinstance(trip.path, Path):
+                path = trip.path
+                path.trip_id = trip_id
+            else:
+                path = Path(path=trip.path, trip_id=trip_id)
+
+            # Insert the path
+            savePathQuery = saveQuery.format(
+                table="paths",
+                keys="({})".format(", ".join(path.keys())),
+                values=", ".join(["?"] * len(path.keys())),
+            )
+            path_cursor.execute(savePathQuery, path.values())
+
+        return trip_id
+    except Exception as e:
+        logger.error(f"Failed to create trip: {e}")
+        raise
+
+
+def _duplicate_trip_in_sqlite(trip_id: int):
+    """
+    Duplicates a trip and its path using coordinated transactions.
+    """
+    try:
+        with robust_coordinated_transaction("main", "path") as cursors:
+            main_cursor = cursors["main"]
+            path_cursor = cursors["path"]
+            
+            # Get the column names first (excluding uid)
+            main_cursor.execute("PRAGMA table_info(trip)")
+            columns = main_cursor.fetchall()
+            column_names = [col[1] for col in columns if col[1] != "uid"]
+            
+            # Build the SELECT query to match the column order
+            select_columns = ", ".join(column_names)
+            main_cursor.execute(f"SELECT {select_columns} FROM trip WHERE uid = ?", (trip_id,))
+            
+            row_to_duplicate = main_cursor.fetchone()
+            if not row_to_duplicate:
+                return None
+
+            # Insert the new trip with matching column order
+            columns_str = ", ".join(column_names)
+            placeholders = ", ".join(["?"] * len(column_names))
+            insert_query = f"INSERT INTO trip ({columns_str}) VALUES ({placeholders})"
+            
+            main_cursor.execute(insert_query, row_to_duplicate)
+            new_trip_id = main_cursor.lastrowid
+
+            # Duplicate the path
+            path_cursor.execute("SELECT path FROM paths WHERE trip_id = ?", (trip_id,))
+            path_result = path_cursor.fetchone()
+            
+            if path_result:
+                path_cursor.execute(
+                    "INSERT INTO paths (trip_id, path) VALUES (?, ?)",
+                    (new_trip_id, path_result[0]),
+                )
+        
+        return new_trip_id
+    except Exception as e:
+        logger.error(f"Failed to duplicate trip {trip_id}: {e}")
+        raise
+
+
+def _update_trip_in_sqlite(formData, last_modified, tripId=None, updateCreated=False):
+    """
+    Updates an existing trip and its associated path using coordinated transactions.
+    """
+    if tripId is None:
+        tripId = formData["trip_id"]
+
+    try:
+        with robust_coordinated_transaction("main", "path") as cursors:
+            main_cursor = cursors["main"]
+            path_cursor = cursors["path"]
+            
+            # Verify ownership
+            main_cursor.execute(
+                "SELECT username FROM trip WHERE uid = :trip_id", {"trip_id": tripId}
+            )
+            row = main_cursor.fetchone()
+
+            if row is None:
+                abort(404)  # Trip does not exist
+            elif getUser() not in (row["username"], owner):
+                abort(404)  # Trip does not belong to the user
+
+            # Get existing path
+            formattedGetUserLines = getUserLines.format(trip_ids=tripId)
+            pathResult = path_cursor.execute(formattedGetUserLines).fetchone()
+
+            # Process path data
+            if "path" in formData.keys():
+                path = [[coord["lat"], coord["lng"]] for coord in json.loads(formData["path"])]
+            else:
+                path = json.loads(pathResult["path"])
+
+            limits = [
+                {"lat": path[0][0], "lng": path[0][1]},
+                {"lat": path[-1][0], "lng": path[-1][1]},
+            ]
+
+            # Process dates
+            (
+                manual_trip_duration,
+                start_datetime,
+                end_datetime,
+                utc_start_datetime,
+                utc_end_datetime,
+            ) = processDates(formData, limits)
+            
+            # Prepare update data
+            updateData = {
+                "trip_id": tripId,
+                "manual_trip_duration": manual_trip_duration,
+                "origin_station": formData["origin_station"],
+                "destination_station": formData["destination_station"],
+                "start_datetime": start_datetime,
+                "end_datetime": end_datetime,
+                "utc_start_datetime": utc_start_datetime,
+                "utc_end_datetime": utc_end_datetime,
+                "operator": formData["operator"],
+                "line_name": formData["lineName"],
+                "material_type": formData["material_type"],
+                "reg": formData["reg"],
+                "seat": formData["seat"],
+                "notes": formData["notes"],
+                "last_modified": last_modified,
+                "price": formData["price"],
+                "currency": formData.get("currency") if formData["price"] != "" else None,
+                "ticket_id": formData.get("ticket_id"),
+                "purchasing_date": formData.get("purchasing_date")
+                if formData["price"] != ""
+                else None,
+            }
+
+            if updateCreated:
+                updateData["created"] = datetime.datetime.now()
+
+            if "estimated_trip_duration" in formData and "trip_length" in formData:
+                updateData["countries"] = getCountriesFromPath(
+                    [{"lat": coord[0], "lng": coord[1]} for coord in path], formData["type"]
+                )
+                updateData["estimated_trip_duration"] = formData["estimated_trip_duration"]
+                updateData["trip_length"] = formData["trip_length"]
+            if "waypoints" in formData:
+                updateData["waypoints"] = formData["waypoints"]
+
+            # Update the trip
+            formatted_values = [
+                (value + " = :" + value) for value in updateData if value != "trip_id"
+            ]
+            formattedUpdateQuery = updateTripQuery.format(values=", ".join(formatted_values))
+            main_cursor.execute(formattedUpdateQuery, updateData)
+
+            # Update the path if provided
+            if path:
+                path_cursor.execute(updatePath, {"trip_id": int(tripId), "path": str(path)})
+                
+        return tripId
+    except Exception as e:
+        logger.error(f"Failed to update trip {tripId}: {e}")
+        raise
+
+
+def _delete_trip_in_sqlite(username, tripId):
+    """
+    Deletes a trip and all its associated data using coordinated transactions.
+    """
+    try:
+        with robust_coordinated_transaction("main", "path") as cursors:
+            main_cursor = cursors["main"]
+            path_cursor = cursors["path"]
+            
+            # Check ownership
+            main_cursor.execute(
+                "SELECT username FROM trip WHERE uid = :trip_id",
+                {"trip_id": tripId},
+            )
+            row = main_cursor.fetchone()
+
+            if row is None:
+                abort(404)  # Trip doesn't exist
+            elif row["username"] != username:
+                abort(404)  # Trip exists but doesn't belong to the user
+
+            # Delete from both databases
+            main_cursor.execute("DELETE FROM trip WHERE uid = :trip_id", {"trip_id": tripId})
+            main_cursor.execute(
+                "DELETE FROM tags_associations WHERE trip_id = :trip_id",
+                {"trip_id": tripId},
+            )
+            path_cursor.execute(deletePathQuery, {"trip_id": tripId})
+            
+    except Exception as e:
+        logger.error(f"Failed to delete trip {tripId}: {e}")
+        raise
+
+
+def update_trip_type_in_sqlite(trip_id, new_type):
+    """
+    Updates the type of a trip using robust single transaction.
+    """
+    try:
+        with robust_single_transaction("main") as cursor:
+            cursor.execute(
+                "UPDATE trip SET type = :newType WHERE uid = :tripId",
+                {"newType": new_type, "tripId": trip_id},
+            )
+    except Exception as e:
+        logger.error(f"Failed to update trip type for {trip_id}: {e}")
+        raise
+
+
+def delete_ticket_from_db(username, ticket_id):
+    """
+    Deletes a ticket from the database and detaches it from any associated trips.
+    """
+    try:
+        trip_ids = []
+
+        with robust_single_transaction("main") as cursor:
+            # Verify ticket ownership
+            cursor.execute(
+                "SELECT 1 FROM tickets WHERE username = ? AND uid = ?",
+                (username, ticket_id),
+            )
+            if cursor.fetchone() is None:
+                abort(401)
+
+            # Get associated trip IDs
+            cursor.execute(
+                "SELECT uid FROM trip WHERE username = ? AND ticket_id = ?",
+                (username, ticket_id),
+            )
+            trip_ids = [row["uid"] for row in cursor.fetchall()]
+
+            # Update trips to remove ticket association
+            cursor.execute(
+                "UPDATE trip SET ticket_id = NULL WHERE username = ? AND ticket_id = ?",
+                (username, ticket_id),
+            )
+
+            # Delete the ticket
+            cursor.execute(
+                "DELETE FROM tickets WHERE username = ? AND uid = ?",
+                (username, ticket_id),
+            )
+
+        # Update PostgreSQL
+        with pg_session() as pg:
+            for trip_id in trip_ids:
+                pg.execute(update_ticket_null_query(), {"trip_id": trip_id})
+        
+        # Re-compare trips
+        for trip_id in trip_ids:
+            compare_trip(trip_id)
+
+        return True, None
+    except Exception as e:
+        logger.error(f"Failed to delete ticket {ticket_id}: {e}")
+        return False, str(e)
+
+
+def attach_ticket_to_trips(username, ticket_id, trip_ids):
+    """
+    Attaches a ticket to a list of trips using robust transactions.
+    """
+    try:
+        placeholders = ", ".join(["?"] * len(trip_ids))
+
+        with robust_single_transaction("main") as cursor:
+            # Check ticket ownership
+            cursor.execute(
+                "SELECT 1 FROM tickets WHERE username = ? AND uid = ?",
+                (username, ticket_id),
+            )
+            if cursor.fetchone() is None:
+                abort(401)
+
+            # Verify all trips belong to the user
+            cursor.execute(
+                f"""
+                SELECT COUNT(*) as c FROM trip 
+                WHERE username = ? AND uid IN ({placeholders})
+                """,
+                [username] + trip_ids,
+            )
+            count = cursor.fetchone()["c"]
+            if count != len(trip_ids):
+                abort(401)
+
+            # Attach ticket to trips
+            cursor.execute(
+                f"""
+                UPDATE trip SET ticket_id = ? 
+                WHERE username = ? AND uid IN ({placeholders})
+                """,
+                [ticket_id, username] + trip_ids,
+            )
+
+        # Update PostgreSQL
+        with pg_session() as pg:
+            for trip_id in trip_ids:
+                pg.execute(
+                    attach_ticket_query(), {"trip_id": trip_id, "ticket_id": ticket_id}
+                )
+        
+        # Compare updated trips
+        for trip_id in trip_ids:
+            compare_trip(trip_id)
+
+        return True, None
+    except Exception as e:
+        logger.error(f"Failed to attach ticket {ticket_id} to trips: {e}")
+        return False, str(e)
