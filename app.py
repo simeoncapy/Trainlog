@@ -8903,6 +8903,256 @@ def user_dashboard(username):
     )
 
 
+def render_trip_animation_page(
+    tripIds=None, tagId=None, ticketId=None, template="video.html"
+):
+    """
+    Render the trip animation page with cinematic route visualization
+    """
+    tag_type = None
+    tag_name = None
+    countries = []
+    length = 0
+    
+    # Handle different input types (same logic as your original function)
+    if tripIds is None and tagId is not None:
+        with managed_cursor(mainConn) as cursor:
+            result = cursor.execute(
+                """
+                SELECT GROUP_CONCAT(trip_id) AS trip_ids, tags.type as type, tags.name as name
+                FROM tags_associations
+                LEFT JOIN tags on tags.uid = tags_associations.tag_id
+                WHERE uuid = ?
+                """,
+                (tagId,),
+            ).fetchone()
+            tripIds = result["trip_ids"]
+            tag_type = result["type"]
+            tag_name = result["name"]
+    elif tripIds is None and ticketId is not None:
+        with managed_cursor(mainConn) as cursor:
+            result = cursor.execute(
+                """
+                SELECT GROUP_CONCAT(trip.uid) AS trip_ids, tickets.name AS ticket_name
+                FROM trip
+                LEFT JOIN tickets ON trip.ticket_id = tickets.uid
+                WHERE tickets.uid = ?
+                """,
+                (ticketId,),
+            ).fetchone()
+            tripIds = result["trip_ids"]
+            tag_name = result["ticket_name"]
+    
+    if not tripIds:
+        abort(410)
+    
+    trip_list = []
+    total_coordinates = []
+    
+    for trip_id in tripIds.split(","):
+        with managed_cursor(mainConn) as cursor:
+            trip = cursor.execute(getTrip, {"trip_id": trip_id}).fetchone()
+            
+            if trip is not None:
+                # Process countries
+                for country in json.loads(trip["countries"]).keys():
+                    if country not in countries:
+                        countries.append(country)
+                
+                length += trip["trip_length"]
+                trip_dict = dict(trip)
+                
+                # Ensure coordinates are properly formatted for animation
+                if 'path' in trip_dict and trip_dict['path']:
+                    coordinates = json.loads(trip_dict['path']) if isinstance(trip_dict['path'], str) else trip_dict['path']
+                    trip_dict['path'] = coordinates
+                    total_coordinates.extend(coordinates)
+                
+                trip_list.append(trip_dict)
+                
+                # Check user permissions
+                user = User.query.filter_by(username=trip["username"]).first()
+                if (
+                    not session.get(user.username)
+                    and not user.is_public_trips()
+                    and not session.get("owner")
+                ):
+                    abort(401)
+            else:
+                abort(410)
+    
+    try:
+        trip_list_sorted = sorted(
+            trip_list, key=lambda trip: trip["utc_filtered_start_datetime"]
+        )
+    except TypeError:
+        abort(416)
+    except Exception:
+        abort(500)
+    
+    # Calculate animation metadata
+    animation_metadata = calculate_animation_metadata(trip_list_sorted)
+    
+    # Open Graph info for sharing
+    og = {}
+    if tag_name:
+        displayCountries = " ".join([get_flag_emoji(c) for c in countries])
+        og["title"] = f"🎬 {tag_name} - Animated Journey"
+        og["description"] = f"Watch this {round(length / 1000)} km journey unfold across {displayCountries}"
+    elif trip_list_sorted[0]["utc_filtered_start_datetime"] not in (1, -1):
+        start_date = datetime.strptime(
+            trip_list_sorted[0]['utc_filtered_start_datetime'], 
+            '%Y-%m-%d %H:%M:%S'
+        ).strftime('%d %B %Y')
+        og["title"] = f"🎬 Animated Journey - {start_date}"
+        og["description"] = (
+            f"Watch the route from {trip_list_sorted[0]['origin_station']} "
+            f"to {trip_list_sorted[-1]['destination_station']} come to life"
+        )
+    else:
+        og["title"] = "🎬 Animated Journey"
+        og["description"] = (
+            f"Experience the route from {trip_list_sorted[0]['origin_station']} "
+            f"to {trip_list_sorted[-1]['destination_station']}"
+        )
+    
+    # User preferences
+    user = User.query.filter_by(username=getUser()).first()
+    if user is None:
+        tileserver = "default"
+        globe = False
+    else:
+        tileserver = user.tileserver
+        globe = user.globe
+    
+    return render_template(
+        template,
+        logosList=listOperatorsLogos(),
+        tripIds=tripIds,
+        collection_voyage=tag_type,
+        tag_description=tag_name,
+        animation_metadata=animation_metadata,
+        special_og=True,
+        tileserver=tileserver,
+        globe=globe,
+        og=og,
+        **lang[session["userinfo"]["lang"]],
+        **session["userinfo"],
+    )
+
+def calculate_animation_metadata(trips):
+    """
+    Calculate metadata for the animation including timing, segments, and key points
+    """
+    metadata = {
+        'total_distance': 0,
+        'total_duration': 0,
+        'segments': [],
+        'key_points': [],
+        'transport_modes': set(),
+        'speed_changes': []
+    }
+    
+    cumulative_distance = 0
+    cumulative_time = 0
+    
+    for i, trip in enumerate(trips):
+        trip_distance = trip.get('trip_length', 0)
+        trip_duration = trip.get('trip_duration', [0, 0])[1] if trip.get('trip_duration') else 0
+        
+        # Calculate segment info
+        segment = {
+            'index': i,
+            'origin': trip['origin_station'],
+            'destination': trip['destination_station'],
+            'operator': trip.get('operator', ''),
+            'line_name': trip.get('line_name', ''),
+            'transport_type': trip.get('type', 'unknown'),
+            'distance': trip_distance,
+            'duration': trip_duration,
+            'start_distance': cumulative_distance,
+            'end_distance': cumulative_distance + trip_distance,
+            'start_time': cumulative_time,
+            'end_time': cumulative_time + trip_duration,
+            'avg_speed': (trip_distance / 1000) / (trip_duration / 3600) if trip_duration > 0 else 0
+        }
+        
+        metadata['segments'].append(segment)
+        metadata['transport_modes'].add(trip.get('type', 'unknown'))
+        
+        # Add key points for station changes
+        if i == 0:  # Starting point
+            metadata['key_points'].append({
+                'type': 'start',
+                'name': trip['origin_station'],
+                'distance': cumulative_distance,
+                'time': cumulative_time
+            })
+        
+        # Ending point or transfer
+        point_type = 'end' if i == len(trips) - 1 else 'transfer'
+        metadata['key_points'].append({
+            'type': point_type,
+            'name': trip['destination_station'],
+            'distance': cumulative_distance + trip_distance,
+            'time': cumulative_time + trip_duration
+        })
+        
+        cumulative_distance += trip_distance
+        cumulative_time += trip_duration
+    
+    metadata['total_distance'] = cumulative_distance
+    metadata['total_duration'] = cumulative_time
+    metadata['transport_modes'] = list(metadata['transport_modes'])
+    
+    return metadata
+
+# Flask routes
+@app.route("/animate/trip/<tripIds>")
+@app.route("/animate/tag/<tagId>")
+@app.route("/animate/ticket/<ticketId>")
+def animate_trip(tripIds=None, tagId=None, ticketId=None):
+    """
+    Route for animated trip visualization
+    """
+    return render_trip_animation_page(tripIds, tagId, ticketId)
+
+@app.route("/api/trip/animation-data/<tripIds>")
+def get_animation_data(tripIds):
+    """
+    API endpoint to get processed animation data for a trip
+    """
+    try:
+        trip_list = []
+        for trip_id in tripIds.split(","):
+            with managed_cursor(mainConn) as cursor:
+                trip = cursor.execute(getTrip, {"trip_id": trip_id}).fetchone()
+                if trip:
+                    trip_dict = dict(trip)
+                    # Process coordinates
+                    if 'path' in trip_dict and trip_dict['path']:
+                        coordinates = json.loads(trip_dict['path']) if isinstance(trip_dict['path'], str) else trip_dict['path']
+                        trip_dict['path'] = coordinates
+                    trip_list.append(trip_dict)
+        
+        trip_list_sorted = sorted(
+            trip_list, key=lambda trip: trip["utc_filtered_start_datetime"]
+        )
+        
+        animation_metadata = calculate_animation_metadata(trip_list_sorted)
+        
+        return jsonify({
+            'trips': trip_list_sorted,
+            'metadata': animation_metadata,
+            'success': True
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'success': False
+        }), 500
+
 if not database_exists(authDb.get_engine().url):
     create_authDb()
 init_main(DbNames.MAIN_DB)

@@ -1,0 +1,1627 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<div class="spinner-container"><div class="lds-spinner"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div></div>
+
+<div id="animation-controls">
+  <div class="controls-panel">
+    <button id="playBtn" class="control-btn">▶️ Play</button>
+    <button id="pauseBtn" class="control-btn" style="display:none;">⏸️ Pause</button>
+    <button id="resetBtn" class="control-btn">🔄 Reset</button>
+    <button id="exportBtn" class="control-btn export-btn">📹 Export Video</button>
+    <div class="speed-control">
+      <label for="durationSelect">Duration:</label>
+      <select id="durationSelect">
+        <option value="15">15s</option>
+        <option value="30" selected>30s</option>
+        <option value="45">45s</option>
+        <option value="60">1m</option>
+        <option value="90">1m 30s</option>
+        <option value="120">2m</option>
+      </select>
+    </div>
+    <div class="progress-control">
+      <label for="progressSlider">Progress:</label>
+      <input type="range" id="progressSlider" min="0" max="100" step="0.1" value="0">
+      <span id="progressValue">0%</span>
+    </div>
+    <div class="camera-control">
+      <label for="cameraStyle">Camera:</label>
+      <select id="cameraStyle">
+        <option value="cinematic">Cinematic</option>
+        <option value="follow">Follow Route</option>
+        <option value="orbit">Orbit Point</option>
+      </select>
+    </div>
+  </div>
+  
+  <div class="trip-info">
+    <div id="currentTripInfo">
+      <div class="trip-header">
+        <img id="tripIcon" src="" alt="" class="trip-icon">
+        <img id="operatorLogo" src="" alt="" class="operator-logo">
+        <div class="trip-details">
+          <h3 id="currentSegment"></h3>
+          <p id="currentDetails"></p>
+        </div>
+      </div>
+      <div class="trip-route">
+        <div class="route-point origin">
+          <span class="route-label">From:</span>
+          <span id="originStation">--</span>
+        </div>
+        <div class="route-point destination">
+          <span class="route-label">To:</span>
+          <span id="destinationStation">--</span>
+        </div>
+      </div>
+    </div>
+    <div id="tripStats">
+      <div class="stat">
+        <span class="stat-label">Total Distance:</span>
+        <span id="totalDistance">-- km</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Total Duration:</span>
+        <span id="totalDuration">--</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="map" class="animation-map"></div>
+
+<!-- Video Logo Overlay -->
+<div id="video-logo" class="video-logo">
+  <img src="/static/images/logo.png" alt="Logo">
+</div>
+
+<!-- Trip Summary Overlay -->
+<div id="trip-summary-overlay" class="trip-summary-overlay">
+  <div class="summary-content">
+    <div class="summary-header">
+      <h2>Trip Summary</h2>
+      <div class="summary-logo">
+        <img src="/static/images/logo.png" alt="Logo">
+      </div>
+    </div>
+    
+    <div class="summary-stats">
+      <div class="stat-card">
+        <div class="stat-icon">🗺️</div>
+        <div class="stat-info">
+          <div class="stat-value" id="summary-distance">-- km</div>
+          <div class="stat-label">Total Distance</div>
+        </div>
+      </div>
+      
+      <div class="stat-card">
+        <div class="stat-icon">⏱️</div>
+        <div class="stat-info">
+          <div class="stat-value" id="summary-duration">--</div>
+          <div class="stat-label">Total Duration</div>
+        </div>
+      </div>
+      
+      <div class="stat-card">
+        <div class="stat-icon">🚀</div>
+        <div class="stat-info">
+          <div class="stat-value" id="summary-segments">--</div>
+          <div class="stat-label">Trip Segments</div>
+        </div>
+      </div>
+      
+      <div class="stat-card">
+        <div class="stat-icon">🌍</div>
+        <div class="stat-info">
+          <div class="stat-value" id="summary-modes">--</div>
+          <div class="stat-label">Transport Modes</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="summary-route">
+      <h3>Route Overview</h3>
+      <div class="route-segments" id="summary-route-segments">
+        <!-- Route segments will be populated here -->
+      </div>
+    </div>
+    
+    <div class="summary-footer">
+      <p>Journey completed successfully!</p>
+    </div>
+  </div>
+</div>
+
+<style>
+:root {
+  --air: rgb(64, 185, 31);
+  --train: rgb(82, 176, 254);
+  --tram: rgb(162, 215, 255);
+  --metro: rgb(0, 69, 149);
+  --bus: rgb(159, 75, 187);
+  --ferry: rgb(30, 30, 124);
+  --car: rgb(166, 143, 205);
+  --cycle: rgb(110, 33, 26);
+  --walk: rgb(232, 140, 0);
+  --aerialway: rgb(175, 207, 59);
+}
+
+.animation-map {
+  width: 100%;
+  height: 100vh;
+  position: relative;
+}
+
+#animation-controls {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 1000;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  backdrop-filter: blur(10px);
+  max-width: 350px;
+}
+
+.controls-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.control-btn {
+  background: #007cba;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.control-btn:hover {
+  background: #005a8b;
+  transform: translateY(-1px);
+}
+
+.export-btn {
+  background: #28a745;
+  margin-top: 10px;
+}
+
+.export-btn:hover {
+  background: #218838;
+}
+
+.export-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.speed-control, .progress-control, .camera-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.speed-control label, .progress-control label, .camera-control label {
+  font-weight: 600;
+  min-width: 60px;
+}
+
+.speed-control input, .progress-control input {
+  flex: 1;
+}
+
+.speed-control select, #cameraStyle {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  font-size: 14px;
+}
+
+.trip-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 15px;
+}
+
+.trip-icon {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 6px;
+  padding: 4px;
+}
+
+.operator-logo {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 4px;
+  padding: 2px;
+}
+
+#progressValue {
+  min-width: 40px;
+  font-weight: 600;
+  color: #007cba;
+}
+
+.trip-details h3 {
+  margin: 0 0 4px 0;
+  color: #333;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.trip-details p {
+  margin: 0;
+  color: #666;
+  font-size: 13px;
+}
+
+.trip-route {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 15px;
+  padding: 12px;
+  background: rgba(0, 124, 186, 0.05);
+  border-radius: 8px;
+  border-left: 3px solid #007cba;
+}
+
+.route-point {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.route-label {
+  font-weight: 600;
+  color: #666;
+  min-width: 40px;
+  font-size: 12px;
+}
+
+.origin span:last-child {
+  color: #28a745;
+  font-weight: 500;
+}
+
+.destination span:last-child {
+  color: #dc3545;
+  font-weight: 500;
+}
+
+.trip-info {
+  border-top: 1px solid #eee;
+  padding-top: 15px;
+}
+
+#currentTripInfo h3 {
+  margin: 0 0 5px 0;
+  color: #333;
+  font-size: 16px;
+}
+
+#currentTripInfo p {
+  margin: 0;
+  color: #666;
+  font-size: 14px;
+}
+
+#tripStats {
+  margin-top: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.stat-label {
+  color: #666;
+}
+
+.spinner-container {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2000;
+}
+
+.lds-spinner {
+  display: inline-block;
+  position: relative;
+  width: 80px;
+  height: 80px;
+}
+
+.lds-spinner div {
+  transform-origin: 40px 40px;
+  animation: lds-spinner 1.2s linear infinite;
+}
+
+.lds-spinner div:after {
+  content: " ";
+  display: block;
+  position: absolute;
+  top: 3px;
+  left: 37px;
+  width: 6px;
+  height: 18px;
+  border-radius: 20%;
+  background: #007cba;
+}
+
+.lds-spinner div:nth-child(1) { transform: rotate(0deg); animation-delay: -1.1s; }
+.lds-spinner div:nth-child(2) { transform: rotate(30deg); animation-delay: -1s; }
+.lds-spinner div:nth-child(3) { transform: rotate(60deg); animation-delay: -0.9s; }
+.lds-spinner div:nth-child(4) { transform: rotate(90deg); animation-delay: -0.8s; }
+.lds-spinner div:nth-child(5) { transform: rotate(120deg); animation-delay: -0.7s; }
+.lds-spinner div:nth-child(6) { transform: rotate(150deg); animation-delay: -0.6s; }
+.lds-spinner div:nth-child(7) { transform: rotate(180deg); animation-delay: -0.5s; }
+.lds-spinner div:nth-child(8) { transform: rotate(210deg); animation-delay: -0.4s; }
+.lds-spinner div:nth-child(9) { transform: rotate(240deg); animation-delay: -0.3s; }
+.lds-spinner div:nth-child(10) { transform: rotate(270deg); animation-delay: -0.2s; }
+.lds-spinner div:nth-child(11) { transform: rotate(300deg); animation-delay: -0.1s; }
+.lds-spinner div:nth-child(12) { transform: rotate(330deg); animation-delay: 0s; }
+
+@keyframes lds-spinner {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (max-width: 768px) {
+  #animation-controls {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    max-width: none;
+    padding: 15px;
+  }
+}
+
+/* Video Logo Overlay */
+.video-logo {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1500;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.video-logo.recording {
+  opacity: 1;
+}
+
+.video-logo img {
+  height: 60px;
+  width: auto;
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,0.3));
+}
+
+/* Trip Summary Overlay */
+.trip-summary-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, rgba(0, 124, 186, 0.95), rgba(40, 167, 69, 0.95));
+  backdrop-filter: blur(10px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.5s ease;
+}
+
+.trip-summary-overlay.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+.summary-content {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 20px;
+  padding: 40px;
+  max-width: 800px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  text-align: center;
+  animation: slideUp 0.6s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 2px solid #eee;
+}
+
+.summary-header h2 {
+  font-size: 2.5em;
+  color: #007cba;
+  margin: 0;
+  font-weight: 700;
+}
+
+.summary-logo img {
+  height: 50px;
+  width: auto;
+}
+
+.summary-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.stat-card {
+  background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+  border-radius: 15px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+  transition: transform 0.3s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-5px);
+}
+
+.stat-icon {
+  font-size: 2em;
+  opacity: 0.8;
+}
+
+.stat-info {
+  text-align: left;
+}
+
+.stat-value {
+  font-size: 1.5em;
+  font-weight: 700;
+  color: #007cba;
+  margin-bottom: 5px;
+}
+
+.stat-label {
+  font-size: 0.9em;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.summary-route {
+  margin-bottom: 30px;
+  text-align: left;
+}
+
+.summary-route h3 {
+  font-size: 1.5em;
+  color: #333;
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+.route-segments {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.route-segment-item {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 15px;
+  background: rgba(0, 124, 186, 0.05);
+  border-radius: 10px;
+  border-left: 4px solid var(--segment-color);
+}
+
+.segment-icon {
+  font-size: 1.5em;
+  width: 40px;
+  text-align: center;
+}
+
+.segment-details {
+  flex: 1;
+}
+
+.segment-name {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 5px;
+}
+
+.segment-info {
+  font-size: 0.9em;
+  color: #666;
+  display: flex;
+  gap: 15px;
+}
+
+.summary-footer {
+  padding-top: 20px;
+  border-top: 2px solid #eee;
+}
+
+.summary-footer p {
+  font-size: 1.2em;
+  color: #28a745;
+  font-weight: 600;
+  margin: 0;
+}
+
+@media (max-width: 768px) {
+  .summary-content {
+    padding: 30px 20px;
+  }
+  
+  .summary-header h2 {
+    font-size: 2em;
+  }
+  
+  .summary-stats {
+    grid-template-columns: 1fr;
+  }
+  
+  .segment-info {
+    flex-direction: column;
+    gap: 5px;
+  }
+}
+</style>
+
+<script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+<link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+
+<script>
+// Transport type colors and icons
+const TRANSPORT_STYLES = {
+  air: { color: 'rgb(64, 185, 31)', icon: '✈️' },
+  train: { color: 'rgb(82, 176, 254)', icon: '🚄' },
+  tram: { color: 'rgb(162, 215, 255)', icon: '🚋' },
+  metro: { color: 'rgb(0, 69, 149)', icon: '🚇' },
+  bus: { color: 'rgb(159, 75, 187)', icon: '🚌' },
+  ferry: { color: 'rgb(30, 30, 124)', icon: '⛴️' },
+  car: { color: 'rgb(166, 143, 205)', icon: '🚗' },
+  cycle: { color: 'rgb(110, 33, 26)', icon: '🚴' },
+  walk: { color: 'rgb(232, 140, 0)', icon: '🚶' },
+  aerialway: { color: 'rgb(175, 207, 59)', icon: '🚡' },
+  helicopter: { color: 'rgb(64, 185, 31)', icon: '🚁' }
+};
+
+// Animation state
+let map;
+let animationState = {
+  isPlaying: false,
+  currentProgress: 0,
+  duration: 30000, // Default 30 seconds
+  startTime: null,
+  pausedAt: null,
+  totalDuration: 0,
+  trips: [],
+  currentTripIndex: 0,
+  lastTripIndex: -1, // Track last trip index to avoid unnecessary updates
+  routeData: null,
+  cameraRotation: 0,
+  lastCameraUpdate: 0,
+  cameraDistance: 1500,
+  cameraHeight: 500,
+  cameraStyle: 'cinematic',
+  isRecording: false,
+  recordingStartDelay: 2000, // 2 second delay before starting animation during recording
+  // Camera lerp state
+  cameraTarget: { lng: 0, lat: 0, zoom: 12, pitch: 35, bearing: 0 },
+  cameraPosition: { lng: 0, lat: 0, zoom: 12, pitch: 35, bearing: 0 }
+};
+
+// Initialize Mapbox
+mapboxgl.accessToken = 'pk.eyJ1Ijoic2ltZnIyNCIsImEiOiJjamcza2xyNHMwaWk0MnFwcXdjM3g3bjdoIn0.PEjPB2weo9QKQG2EaYOt4A';
+
+function initializeMap() {
+  map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/satellite-streets-v12',
+    center: [0, 0],
+    zoom: 10,
+    pitch: 35,
+    bearing: 0,
+    preserveDrawingBuffer: true, // Essential for high-quality video capture
+    antialias: true, // Enable antialiasing for better quality
+    // Force higher resolution for recording
+    pixelRatio: window.devicePixelRatio || 2
+  });
+
+  map.on('load', () => {
+    // Add terrain and sky
+    map.addSource('mapbox-dem', {
+      'type': 'raster-dem',
+      'url': 'mapbox://mapbox.mapbox-terrain-dem-v1',
+      'tileSize': 512,
+      'maxzoom': 14
+    });
+    
+    map.setTerrain({ 'source': 'mapbox-dem', 'exaggeration': 1.5 });
+    
+    map.addLayer({
+      'id': 'sky',
+      'type': 'sky',
+      'paint': {
+        'sky-type': 'atmosphere',
+        'sky-atmosphere-sun': [0.0, 80.0],
+        'sky-atmosphere-sun-intensity': 15,
+        'sky-atmosphere-color': 'rgba(85, 151, 210, 0.5)',
+        'sky-atmosphere-halo-color': 'rgba(255, 255, 255, 0.8)'
+      }
+    });
+
+    map.setFog({
+      'color': 'rgb(220, 230, 240)',
+      'high-color': 'rgb(36, 92, 223)',
+      'horizon-blend': 0.02,
+      'space-color': 'rgb(11, 11, 25)',
+      'star-intensity': 0.6
+    });
+
+    loadTripsData();
+  });
+}
+
+function loadTripsData() {
+  var tripIds = {{tripIds|tojson}};
+  
+  $.post({
+    url: '{{url_for("getPublicTrips")}}',
+    contentType: 'application/json',
+    data: JSON.stringify({ tripIds: tripIds }),
+    success: function(data, status) {
+      animationState.trips = data[0].reverse();
+      processTripsForAnimation();
+      $('.spinner-container').hide();
+    },
+    error: function(xhr, status, error) {
+      console.error("Error loading trips:", error);
+      $('.spinner-container').hide();
+    }
+  });
+}
+
+function processTripsForAnimation() {
+  let allCoordinates = [];
+  let totalDistance = 0;
+  let totalDuration = 0;
+  let tripSegments = [];
+  
+  animationState.trips.forEach((trip, index) => {
+    const coordinates = trip.path || [];
+    
+    if (coordinates.length > 0) {
+      const startIndex = allCoordinates.length;
+      allCoordinates = allCoordinates.concat(coordinates);
+      const endIndex = allCoordinates.length - 1;
+      
+      let tripDistance = 0;
+      for (let i = 0; i < coordinates.length - 1; i++) {
+        const start = coordinates[i];
+        const end = coordinates[i + 1];
+        tripDistance += haversineDistance(start[0], start[1], end[0], end[1]);
+      }
+      
+      tripSegments.push({
+        startIndex,
+        endIndex,
+        tripType: trip.trip.type,
+        distance: tripDistance,
+        trip: trip.trip
+      });
+      
+      totalDistance += tripDistance;
+      totalDuration += trip.trip.trip_duration ? trip.trip.trip_duration[1] : 0;
+    }
+  });
+
+  animationState.routeData = {
+    coordinates: allCoordinates,
+    totalDistance: totalDistance,
+    totalDuration: totalDuration,
+    segments: tripSegments
+  };
+
+  document.getElementById('totalDistance').textContent = `${(totalDistance / 1000).toFixed(1)} km`;
+  document.getElementById('totalDuration').textContent = formatDuration(totalDuration);
+
+  addColoredRouteToMap(allCoordinates, tripSegments);
+  
+  if (allCoordinates.length > 0) {
+    const startCoord = allCoordinates[0];
+    // Initialize camera position at start
+    animationState.cameraPosition.lng = startCoord[1];
+    animationState.cameraPosition.lat = startCoord[0];
+    animationState.cameraTarget.lng = startCoord[1];
+    animationState.cameraTarget.lat = startCoord[0];
+    
+    // Set initial camera position
+    resetCameraToStart();
+  }
+}
+
+function resetCameraToStart() {
+  if (!animationState.routeData || animationState.routeData.coordinates.length === 0) return;
+  
+  const startCoord = animationState.routeData.coordinates[0];
+  
+  // Reset camera state
+  animationState.cameraPosition = {
+    lng: startCoord[1],
+    lat: startCoord[0],
+    zoom: 12,
+    pitch: 35,
+    bearing: 0
+  };
+  
+  animationState.cameraTarget = {
+    lng: startCoord[1],
+    lat: startCoord[0],
+    zoom: 12,
+    pitch: 35,
+    bearing: 0
+  };
+  
+  animationState.cameraRotation = 0;
+  
+  // Apply to map immediately
+  map.easeTo({
+    center: [startCoord[1], startCoord[0]],
+    zoom: 12,
+    bearing: 0,
+    pitch: 35,
+    duration: 50, // short but continuous updates
+    easing: t => t // linear movement
+  });
+}
+
+function addColoredRouteToMap(coordinates, segments) {
+  const fixedCoordinates = coordinates.map(coord => [coord[1], coord[0]]);
+  
+  // Add route segments (initially empty)
+  segments.forEach((segment, index) => {
+    const tripType = segment.tripType || 'walk';
+    const style = TRANSPORT_STYLES[tripType] || TRANSPORT_STYLES.walk;
+    
+    map.addSource(`route-segment-${index}`, {
+      'type': 'geojson',
+      'data': {
+        'type': 'Feature',
+        'properties': { tripType },
+        'geometry': {
+          'type': 'LineString',
+          'coordinates': []
+        }
+      }
+    });
+
+    // Add white border/outline layer first (renders underneath)
+    map.addLayer({
+      'id': `route-segment-border-${index}`,
+      'type': 'line',
+      'source': `route-segment-${index}`,
+      'layout': {
+        'line-join': 'round',
+        'line-cap': 'round'
+      },
+      'paint': {
+        'line-color': 'white',
+        'line-width': [
+          'interpolate',
+          ['exponential', 2],
+          ['zoom'],
+          5, 6,
+          10, 12,
+          15, 18
+        ],
+        'line-opacity': 0.9
+      }
+    });
+
+    // Add main colored line layer on top
+    map.addLayer({
+      'id': `route-segment-${index}`,
+      'type': 'line',
+      'source': `route-segment-${index}`,
+      'layout': {
+        'line-join': 'round',
+        'line-cap': 'round'
+      },
+      'paint': {
+        'line-color': style.color,
+        'line-width': [
+          'interpolate',
+          ['exponential', 2],
+          ['zoom'],
+          5, 4,
+          10, 8,
+          15, 14
+        ],
+        'line-opacity': 1
+      }
+    });
+  });
+
+  // Remove the transport icon layer - we don't need it
+}
+
+function startAnimation() {
+  if (animationState.isPlaying) return;
+  
+  animationState.isPlaying = true;
+  animationState.startTime = performance.now() - (animationState.pausedAt || 0);
+  animationState.lastCameraUpdate = performance.now();
+  animationState.lastTripIndex = -1; // Reset trip tracking
+  
+  document.getElementById('playBtn').style.display = 'none';
+  document.getElementById('pauseBtn').style.display = 'inline-block';
+  
+  animate();
+}
+
+function pauseAnimation() {
+  animationState.isPlaying = false;
+  animationState.pausedAt = performance.now() - animationState.startTime;
+  
+  document.getElementById('playBtn').style.display = 'inline-block';
+  document.getElementById('pauseBtn').style.display = 'none';
+}
+
+function resetAnimation() {
+  animationState.isPlaying = false;
+  animationState.currentProgress = 0;
+  animationState.startTime = null;
+  animationState.pausedAt = null;
+  animationState.currentTripIndex = 0;
+  animationState.lastTripIndex = -1;
+  animationState.cameraRotation = 0;
+  
+  document.getElementById('playBtn').style.display = 'inline-block';
+  document.getElementById('pauseBtn').style.display = 'none';
+  document.getElementById('progressSlider').value = 0;
+  document.getElementById('progressValue').textContent = '0%';
+  
+  // Clear all route segments from map
+  if (animationState.routeData && animationState.routeData.segments) {
+    animationState.routeData.segments.forEach((segment, index) => {
+      if (map.getSource(`route-segment-${index}`)) {
+        map.getSource(`route-segment-${index}`).setData({
+          'type': 'Feature',
+          'properties': { tripType: segment.tripType },
+          'geometry': {
+            'type': 'LineString',
+            'coordinates': []
+          }
+        });
+      }
+    });
+  }
+  
+  // Reset camera to start position
+  resetCameraToStart();
+  
+  // Reset to start position
+  updateAnimationFrame(0);
+}
+
+function animate() {
+  if (!animationState.isPlaying) return;
+  
+  const elapsed = performance.now() - animationState.startTime;
+  const progress = Math.min(elapsed / animationState.duration, 1);
+  
+  updateAnimationFrame(progress);
+  
+  if (progress >= 1) {
+    startFinalCameraLift();
+  } else {
+    requestAnimationFrame(animate);
+  }
+}
+
+function updateAnimationFrame(progress) {
+  const coordinates = animationState.routeData.coordinates;
+  const segments = animationState.routeData.segments;
+  if (!coordinates || coordinates.length === 0) return;
+  
+  animationState.currentProgress = progress;
+  
+  const totalDistance = animationState.routeData.totalDistance;
+  const targetDistance = progress * totalDistance;
+  
+  const position = getPositionAtDistance(coordinates, targetDistance);
+  if (!position) return;
+  
+  const { lat, lng } = position;
+  
+  // Draw progressive route - this creates the line endpoint
+  drawProgressiveRoute(progress, segments, coordinates);
+  
+  // Get the exact line end position for camera following
+  const lineEndPosition = getLineEndPosition(progress, segments, coordinates);
+  
+  // Update camera to follow the line end
+  updateSmoothCamera(lineEndPosition.lng, lineEndPosition.lat);
+  
+  // Update UI
+  document.getElementById('progressSlider').value = progress * 100;
+  document.getElementById('progressValue').textContent = `${(progress * 100).toFixed(1)}%`;
+  
+  updateCurrentTripInfo(progress);
+}
+
+function getLineEndPosition(progress, segments, coordinates) {
+  const totalDistance = animationState.routeData.totalDistance;
+  const currentDistance = progress * totalDistance;
+  
+  let cumulativeDistance = 0;
+  
+  for (const segment of segments) {
+    const segmentDistance = segment.distance;
+    const segmentStart = cumulativeDistance;
+    const segmentEnd = cumulativeDistance + segmentDistance;
+    
+    if (currentDistance > segmentStart && currentDistance <= segmentEnd) {
+      // We're in this segment
+      const segmentCoords = coordinates.slice(segment.startIndex, segment.endIndex + 1);
+      const segmentProgress = (currentDistance - segmentStart) / segmentDistance;
+      
+      // Find exact position using distance-based calculation
+      let targetSegmentDistance = segmentProgress * segmentDistance;
+      let segmentCumulativeDistance = 0;
+      
+      for (let i = 0; i < segmentCoords.length - 1; i++) {
+        const start = segmentCoords[i];
+        const end = segmentCoords[i + 1];
+        const pointDistance = haversineDistance(start[0], start[1], end[0], end[1]);
+        
+        if (segmentCumulativeDistance + pointDistance >= targetSegmentDistance) {
+          const remainingDistance = targetSegmentDistance - segmentCumulativeDistance;
+          const pointProgress = pointDistance > 0 ? remainingDistance / pointDistance : 0;
+          
+          const lat = start[0] + (end[0] - start[0]) * pointProgress;
+          const lng = start[1] + (end[1] - start[1]) * pointProgress;
+          
+          return { lat, lng };
+        }
+        
+        segmentCumulativeDistance += pointDistance;
+      }
+      
+      // Fallback to last coordinate of segment
+      const lastCoord = segmentCoords[segmentCoords.length - 1];
+      return { lat: lastCoord[0], lng: lastCoord[1] };
+    }
+    
+    cumulativeDistance += segmentDistance;
+  }
+  
+  // Fallback to end of route
+  const lastCoord = coordinates[coordinates.length - 1];
+  return { lat: lastCoord[0], lng: lastCoord[1] };
+}
+
+function drawProgressiveRoute(progress, segments, coordinates) {
+  const totalDistance = animationState.routeData.totalDistance;
+  const currentDistance = progress * totalDistance;
+  
+  let cumulativeDistance = 0;
+  
+  segments.forEach((segment, segmentIndex) => {
+    const segmentDistance = segment.distance;
+    const segmentStart = cumulativeDistance;
+    const segmentEnd = cumulativeDistance + segmentDistance;
+    
+    if (currentDistance > segmentStart) {
+      const segmentCoords = coordinates.slice(segment.startIndex, segment.endIndex + 1);
+      let coordsToShow = [];
+      
+      if (currentDistance >= segmentEnd) {
+        // Show entire segment
+        coordsToShow = segmentCoords;
+      } else {
+        // Smooth interpolation for partial segment
+        const segmentProgress = (currentDistance - segmentStart) / segmentDistance;
+        
+        // Calculate exact position along the route
+        let targetSegmentDistance = segmentProgress * segmentDistance;
+        let segmentCumulativeDistance = 0;
+        
+        for (let i = 0; i < segmentCoords.length - 1; i++) {
+          const start = segmentCoords[i];
+          const end = segmentCoords[i + 1];
+          const pointDistance = haversineDistance(start[0], start[1], end[0], end[1]);
+          
+          if (segmentCumulativeDistance + pointDistance >= targetSegmentDistance) {
+            // Include all points up to this one
+            coordsToShow = segmentCoords.slice(0, i + 1);
+            
+            // Add interpolated point for smooth animation
+            const remainingDistance = targetSegmentDistance - segmentCumulativeDistance;
+            const pointProgress = pointDistance > 0 ? remainingDistance / pointDistance : 0;
+            
+            const interpolatedLat = start[0] + (end[0] - start[0]) * pointProgress;
+            const interpolatedLng = start[1] + (end[1] - start[1]) * pointProgress;
+            
+            coordsToShow.push([interpolatedLat, interpolatedLng]);
+            break;
+          }
+          
+          segmentCumulativeDistance += pointDistance;
+        }
+        
+        // Ensure we have at least one coordinate
+        if (coordsToShow.length === 0) {
+          coordsToShow = [segmentCoords[0]];
+        }
+      }
+      
+      const fixedCoords = coordsToShow.map(coord => [coord[1], coord[0]]);
+      if (map.getSource(`route-segment-${segmentIndex}`)) {
+        map.getSource(`route-segment-${segmentIndex}`).setData({
+          'type': 'Feature',
+          'properties': { tripType: segment.tripType },
+          'geometry': {
+            'type': 'LineString',
+            'coordinates': fixedCoords
+          }
+        });
+      }
+    }
+    
+    cumulativeDistance += segmentDistance;
+  });
+}
+
+function getCurrentTrip(progress) {
+  let cumulativeDistance = 0;
+  const totalDistance = animationState.routeData.totalDistance;
+  const currentDistance = progress * totalDistance;
+  
+  for (let i = 0; i < animationState.trips.length; i++) {
+    const trip = animationState.trips[i];
+    const tripDistance = trip.trip.trip_length || 0;
+    
+    if (currentDistance <= cumulativeDistance + tripDistance) {
+      animationState.currentTripIndex = i;
+      return trip;
+    }
+    cumulativeDistance += tripDistance;
+  }
+  
+  return animationState.trips[animationState.trips.length - 1];
+}
+
+function getPositionAtDistance(coordinates, targetDistance) {
+  let cumulativeDistance = 0;
+  
+  for (let i = 0; i < coordinates.length - 1; i++) {
+    const start = coordinates[i];
+    const end = coordinates[i + 1];
+    
+    const segmentDistance = haversineDistance(start[0], start[1], end[0], end[1]);
+    
+    if (cumulativeDistance + segmentDistance >= targetDistance) {
+      const remainingDistance = targetDistance - cumulativeDistance;
+      const segmentProgress = segmentDistance > 0 ? remainingDistance / segmentDistance : 0;
+      
+      const lat = start[0] + (end[0] - start[0]) * segmentProgress;
+      const lng = start[1] + (end[1] - start[1]) * segmentProgress;
+      
+      return { lat, lng, segmentIndex: i };
+    }
+    
+    cumulativeDistance += segmentDistance;
+  }
+  
+  const lastCoord = coordinates[coordinates.length - 1];
+  return { 
+    lat: lastCoord[0], 
+    lng: lastCoord[1], 
+    segmentIndex: coordinates.length - 1 
+  };
+}
+
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+function lerp(start, end, amt) {
+  return (1 - amt) * start + amt * end;
+}
+
+function updateSmoothCamera(lng, lat) {
+  const currentTrip = animationState.trips[animationState.currentTripIndex];
+  let targetZoom = 12;
+  let targetPitch = 35;
+  
+  if (currentTrip) {
+    const tripType = currentTrip.trip.type;
+    switch(tripType) {
+      case 'air':
+      case 'helicopter':
+        targetZoom = 9;
+        targetPitch = 25;
+        break;
+      case 'train':
+      case 'metro':
+        targetZoom = 11;
+        targetPitch = 40;
+        break;
+      case 'car':
+      case 'bus':
+        targetZoom = 12;
+        targetPitch = 45;
+        break;
+      case 'walk':
+      case 'cycle':
+        targetZoom = 14;
+        targetPitch = 50;
+        break;
+      default:
+        targetZoom = 11;
+        targetPitch = 35;
+    }
+  }
+  
+  // Camera rotation - consistent speed for smooth recording
+  animationState.cameraRotation += 0.15;
+  
+  // Update camera target
+  animationState.cameraTarget.lng = lng;
+  animationState.cameraTarget.lat = lat;
+  animationState.cameraTarget.zoom = targetZoom;
+  animationState.cameraTarget.pitch = targetPitch;
+  animationState.cameraTarget.bearing = animationState.cameraRotation % 360;
+  
+  // Use consistent, smooth lerp speeds for recording
+  const lerpSpeed = 0.06;
+  const zoomSpeed = 0.03;
+  const bearingSpeed = 0.02;
+  
+  animationState.cameraPosition.lng = lerp(animationState.cameraPosition.lng, animationState.cameraTarget.lng, lerpSpeed);
+  animationState.cameraPosition.lat = lerp(animationState.cameraPosition.lat, animationState.cameraTarget.lat, lerpSpeed);
+  animationState.cameraPosition.zoom = lerp(animationState.cameraPosition.zoom, animationState.cameraTarget.zoom, zoomSpeed);
+  animationState.cameraPosition.pitch = lerp(animationState.cameraPosition.pitch, animationState.cameraTarget.pitch, zoomSpeed);
+  animationState.cameraPosition.bearing = lerp(animationState.cameraPosition.bearing, animationState.cameraTarget.bearing, bearingSpeed);
+  
+  // Use flyTo for smoother camera movements during recording
+  if (animationState.isRecording) {
+    map.easeTo({
+      center: [animationState.cameraPosition.lng, animationState.cameraPosition.lat],
+      zoom: animationState.cameraPosition.zoom,
+      bearing: animationState.cameraPosition.bearing,
+      pitch: animationState.cameraPosition.pitch,
+      duration: 50, // Very short duration for smooth transitions
+      easing: (t) => t // Linear easing for consistent motion
+    });
+  } else {
+    map.easeTo({
+      center: [animationState.cameraPosition.lng, animationState.cameraPosition.lat],
+      zoom: animationState.cameraPosition.zoom,
+      bearing: animationState.cameraPosition.bearing,
+      pitch: animationState.cameraPosition.pitch,
+      duration: 50, // short but continuous updates
+      easing: t => t // linear movement
+    });
+  }
+}
+
+function startFinalCameraLift() {
+  animationState.isPlaying = false;
+  document.getElementById('playBtn').style.display = 'inline-block';
+  document.getElementById('pauseBtn').style.display = 'none';
+  
+  const coordinates = animationState.routeData.coordinates;
+  if (coordinates.length > 0) {
+    const bounds = new mapboxgl.LngLatBounds();
+    coordinates.forEach(coord => bounds.extend([coord[1], coord[0]]));
+    
+    map.fitBounds(bounds, {
+      padding: 100,
+      pitch: 0,
+      bearing: 0,
+      duration: 3000
+    });
+    
+    // Show trip summary overlay after camera lift (delay for recording)
+    setTimeout(() => {
+      showTripSummaryOverlay();
+    }, animationState.isRecording ? 1500 : 500);
+  }
+}
+
+function showTripSummaryOverlay() {
+  const overlay = document.getElementById('trip-summary-overlay');
+  
+  // Populate summary data
+  populateTripSummary();
+  
+  // Show overlay
+  overlay.classList.add('show');
+  
+  // Auto-hide after some time when recording
+  if (animationState.isRecording) {
+    setTimeout(() => {
+      overlay.classList.remove('show');
+    }, 4000);
+  }
+}
+
+function populateTripSummary() {
+  const routeData = animationState.routeData;
+  if (!routeData) return;
+  
+  // Update summary statistics
+  document.getElementById('summary-distance').textContent = `${(routeData.totalDistance / 1000).toFixed(1)} km`;
+  document.getElementById('summary-duration').textContent = formatDuration(routeData.totalDuration);
+  document.getElementById('summary-segments').textContent = animationState.trips.length.toString();
+  
+  // Count unique transport modes
+  const uniqueModes = new Set(animationState.trips.map(trip => trip.trip.type));
+  document.getElementById('summary-modes').textContent = uniqueModes.size.toString();
+  
+  // Populate route segments
+  const segmentsContainer = document.getElementById('summary-route-segments');
+  segmentsContainer.innerHTML = '';
+  
+  animationState.trips.slice(0, 5).forEach((trip, index) => { // Show first 5 segments
+    const tripType = trip.trip.type || 'walk';
+    const style = TRANSPORT_STYLES[tripType] || TRANSPORT_STYLES.walk;
+    
+    const segmentItem = document.createElement('div');
+    segmentItem.className = 'route-segment-item';
+    segmentItem.style.setProperty('--segment-color', style.color);
+    
+    segmentItem.innerHTML = `
+      <div class="segment-icon">${style.icon}</div>
+      <div class="segment-details">
+        <div class="segment-name">${trip.trip.operator || 'Unknown'} ${trip.trip.line_name || ''}</div>
+        <div class="segment-info">
+          <span>${trip.trip.origin_station || '--'} → ${trip.trip.destination_station || '--'}</span>
+          <span>${formatDuration(trip.trip.trip_duration ? trip.trip.trip_duration[1] : 0)}</span>
+        </div>
+      </div>
+    `;
+    
+    segmentsContainer.appendChild(segmentItem);
+  });
+  
+  // Add "..." if there are more segments
+  if (animationState.trips.length > 5) {
+    const moreItem = document.createElement('div');
+    moreItem.className = 'route-segment-item';
+    moreItem.style.opacity = '0.6';
+    moreItem.innerHTML = `
+      <div class="segment-icon">...</div>
+      <div class="segment-details">
+        <div class="segment-name">and ${animationState.trips.length - 5} more segments</div>
+      </div>
+    `;
+    segmentsContainer.appendChild(moreItem);
+  }
+}
+
+function updateCurrentTripInfo(progress) {
+  let cumulativeDistance = 0;
+  const totalDistance = animationState.routeData.totalDistance;
+  const currentDistance = progress * totalDistance;
+  
+  for (let i = 0; i < animationState.trips.length; i++) {
+    const trip = animationState.trips[i];
+    const tripDistance = trip.trip.trip_length || 0;
+    
+    if (currentDistance <= cumulativeDistance + tripDistance) {
+      // Only update if trip has changed to avoid continuous DOM updates
+      if (animationState.lastTripIndex !== i) {
+        animationState.currentTripIndex = i;
+        animationState.lastTripIndex = i;
+        
+        const tripType = trip.trip.type || 'walk';
+        
+        // Update trip icon with error handling
+        const tripIconElement = document.getElementById('tripIcon');
+        if (tripIconElement) {
+          tripIconElement.src = `/static/images/icons/trip_logos/${tripType}.png`;
+          tripIconElement.alt = tripType;
+          tripIconElement.onerror = function() {
+            this.style.display = 'none';
+          };
+        }
+        
+        // Update operator logo with error handling
+        const operatorLogoElement = document.getElementById('operatorLogo');
+        if (operatorLogoElement) {
+          if (trip.trip.logo_url) {
+            operatorLogoElement.src = `/static/${trip.trip.logo_url}`;
+            operatorLogoElement.alt = trip.trip.operator || '';
+            operatorLogoElement.style.display = 'block';
+            operatorLogoElement.onerror = function() {
+              this.style.display = 'none';
+            };
+          } else {
+            operatorLogoElement.style.display = 'none';
+          }
+        }
+        
+        // Update trip details
+        const currentSegmentElement = document.getElementById('currentSegment');
+        if (currentSegmentElement) {
+          currentSegmentElement.textContent = 
+            `${trip.trip.operator || 'Unknown'} ${trip.trip.line_name || ''}`;
+        }
+        
+        const currentDetailsElement = document.getElementById('currentDetails');
+        if (currentDetailsElement) {
+          currentDetailsElement.textContent = 
+            formatDuration(trip.trip.trip_duration ? trip.trip.trip_duration[1] : 0);
+        }
+        
+        // Update origin and destination
+        const originStationElement = document.getElementById('originStation');
+        if (originStationElement) {
+          originStationElement.textContent = trip.trip.origin_station || '--';
+        }
+        
+        const destinationStationElement = document.getElementById('destinationStation');
+        if (destinationStationElement) {
+          destinationStationElement.textContent = trip.trip.destination_station || '--';
+        }
+      }
+      break;
+    }
+    cumulativeDistance += tripDistance;
+  }
+}
+
+function formatDuration(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  return `${minutes}m`;
+}
+
+// Video export functionality
+let isExporting = false;
+let recordingMediaRecorder = null;
+
+async function exportVideo() {
+  if (isExporting) return;
+  
+  isExporting = true;
+  animationState.isRecording = true;
+  
+  const exportBtn = document.getElementById('exportBtn');
+  exportBtn.disabled = true;
+  exportBtn.textContent = '🎬 Preparing...';
+  
+  try {
+    resetAnimation();
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    resetCameraToStart();
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Show video logo during recording
+    const videoLogo = document.getElementById('video-logo');
+    videoLogo.classList.add('recording');
+    
+    exportBtn.textContent = '🎬 Recording...';
+    
+    const canvas = map.getCanvas();
+    const scale = window.devicePixelRatio || 2;
+    const originalWidth = canvas.width;
+    const originalHeight = canvas.height;
+    
+    canvas.width = originalWidth * scale;
+    canvas.height = originalHeight * scale;
+    canvas.style.width = originalWidth + 'px';
+    canvas.style.height = originalHeight + 'px';
+    
+    const stream = canvas.captureStream(60); 
+    
+    // Increased bitrate for high-quality output
+    let options = {
+      mimeType: 'video/webm;codecs=vp9',
+      videoBitsPerSecond: 30000000 // 30 Mbps for very high quality
+    };
+    
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+      options = {
+        mimeType: 'video/webm;codecs=vp8',
+        videoBitsPerSecond: 20000000 // Fallback to 20 Mbps for VP8
+      };
+    }
+    
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+      options = {
+        mimeType: 'video/webm',
+        videoBitsPerSecond: 15000000 // Final fallback to 15 Mbps
+      };
+    }
+    
+    recordingMediaRecorder = new MediaRecorder(stream, options);
+    const recordedChunks = [];
+    
+    recordingMediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        recordedChunks.push(event.data);
+      }
+    };
+    
+    recordingMediaRecorder.onstop = () => {
+      canvas.width = originalWidth;
+      canvas.height = originalHeight;
+      
+      // Hide video logo
+      videoLogo.classList.remove('recording');
+      
+      if (recordedChunks.length > 0) {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        downloadVideo(blob);
+      } else {
+        alert('No video data was recorded. Please try again.');
+      }
+      
+      cleanupRecording();
+    };
+    
+    recordingMediaRecorder.onerror = (event) => {
+      videoLogo.classList.remove('recording');
+      alert('Recording failed: ' + event.error.message);
+      cleanupRecording();
+    };
+    
+    recordingMediaRecorder.start(100); 
+    
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    startAnimation();
+    
+    // Extended recording time to include summary overlay
+    const totalRecordingTime = animationState.duration + 8000; // Extra time for summary
+    
+    setTimeout(() => {
+      if (recordingMediaRecorder && recordingMediaRecorder.state === 'recording') {
+        recordingMediaRecorder.stop();
+      }
+    }, totalRecordingTime);
+    
+  } catch (error) {
+    document.getElementById('video-logo').classList.remove('recording');
+    alert('Video export setup failed: ' + error.message);
+    cleanupRecording();
+  }
+}
+
+function cleanupRecording() {
+  const exportBtn = document.getElementById('exportBtn');
+  exportBtn.disabled = false;
+  exportBtn.textContent = '📹 Export Video';
+  isExporting = false;
+  animationState.isRecording = false;
+  
+  if (recordingMediaRecorder) {
+    if (recordingMediaRecorder.state === 'recording') {
+      recordingMediaRecorder.stop();
+    }
+    recordingMediaRecorder = null;
+  }
+}
+
+function downloadVideo(blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `trip-animation-${Date.now()}.webm`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Event listeners
+document.getElementById('playBtn').addEventListener('click', startAnimation);
+document.getElementById('pauseBtn').addEventListener('click', pauseAnimation);
+document.getElementById('resetBtn').addEventListener('click', resetAnimation);
+document.getElementById('exportBtn').addEventListener('click', exportVideo);
+
+document.getElementById('durationSelect').addEventListener('change', (e) => {
+  animationState.duration = parseInt(e.target.value) * 1000; // Convert to milliseconds
+});
+
+document.getElementById('cameraStyle').addEventListener('change', (e) => {
+  animationState.cameraStyle = e.target.value;
+  animationState.cameraRotation = 0;
+});
+
+document.getElementById('progressSlider').addEventListener('input', (e) => {
+  const progress = parseFloat(e.target.value) / 100;
+  updateAnimationFrame(progress);
+  
+  if (animationState.isPlaying) {
+    animationState.startTime = performance.now() - (progress * animationState.duration);
+  } else {
+    animationState.pausedAt = progress * animationState.duration;
+  }
+});
+
+// Close trip summary overlay when clicking outside or pressing escape
+document.getElementById('trip-summary-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'trip-summary-overlay') {
+    document.getElementById('trip-summary-overlay').classList.remove('show');
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    document.getElementById('trip-summary-overlay').classList.remove('show');
+  }
+});
+
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+  initializeMap();
+});
+</script>
+
+{% endblock %}
