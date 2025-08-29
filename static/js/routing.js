@@ -338,25 +338,68 @@ function createCustomRouter(baseRouter, freehandSegments) {
       segments.forEach(function(segment, segmentIndex) {
         if (segment.isFreehand) {
           // Handle freehand segment
-          var start = segment.waypoints[0].latLng;
-          var end = segment.waypoints[1].latLng;
+          var startWaypoint = segment.waypoints[0].latLng;
+          var endWaypoint = segment.waypoints[1].latLng;
           
-          // Draw orange dashed line for freehand segments
-          var freehandLine = L.polyline([start, end], {
+          // For freehand segments, we need to connect to the actual route endpoints,
+          // not the waypoint markers directly
+          var actualStart = startWaypoint;
+          var actualEnd = endWaypoint;
+          
+          // If this freehand segment is between routed segments, we need to connect
+          // to where the previous route ended and where the next route will start
+          if (segmentIndex > 0 && allRoutes[segmentIndex - 1]) {
+            // Connect from the end of the previous route
+            var prevRoute = allRoutes[segmentIndex - 1];
+            if (prevRoute && prevRoute.coordinates && prevRoute.coordinates.length > 0) {
+              var lastCoord = prevRoute.coordinates[prevRoute.coordinates.length - 1];
+              actualStart = L.latLng(lastCoord.lat, lastCoord.lng);
+            }
+          }
+          
+          // We can't look ahead to the next route since it hasn't been processed yet,
+          // so we'll handle this in a second pass after all routes are computed
+          
+          // For now, draw the main freehand line (will be updated in combineRoutes)
+          var freehandLine = L.polyline([actualStart, actualEnd], {
             color: '#ff8800',
             weight: 4,
             opacity: 0.8,
             dashArray: '10, 10',
-            interactive: false  // Prevent clicks on freehand lines
+            interactive: false
           }).addTo(map);
           freehandLines.push(freehandLine);
           
-          var distance = start.distanceTo(end);
+          // Add dashed connector from waypoint to actual start (if different)
+          if (startWaypoint.distanceTo(actualStart) > 1) {
+            var connectorLine = L.polyline([startWaypoint, actualStart], {
+              color: '#ff8800',
+              weight: 2,
+              opacity: 0.5,
+              dashArray: '5, 5',
+              interactive: false
+            }).addTo(map);
+            freehandLines.push(connectorLine);
+          }
+          
+          // Add dashed connector from actual end to waypoint (if different) 
+          if (actualEnd.distanceTo(endWaypoint) > 1) {
+            var connectorLine2 = L.polyline([actualEnd, endWaypoint], {
+              color: '#ff8800',
+              weight: 2,
+              opacity: 0.5,
+              dashArray: '5, 5',
+              interactive: false
+            }).addTo(map);
+            freehandLines.push(connectorLine2);
+          }
+          
+          var distance = actualStart.distanceTo(actualEnd);
           
           allRoutes[segmentIndex] = {
             coordinates: [
-              {lat: start.lat, lng: start.lng},
-              {lat: end.lat, lng: end.lng}
+              {lat: actualStart.lat, lng: actualStart.lng},
+              {lat: actualEnd.lat, lng: actualEnd.lng}
             ],
             instructions: [{
               type: 'Straight',
@@ -370,7 +413,11 @@ function createCustomRouter(baseRouter, freehandSegments) {
               totalTime: 0
             },
             inputWaypoints: segment.waypoints,
-            isFreehand: true
+            isFreehand: true,
+            actualStart: actualStart,
+            actualEnd: actualEnd,
+            waypointStart: startWaypoint,
+            waypointEnd: endWaypoint
           };
           
           processedSegments++;
@@ -416,6 +463,12 @@ function createCustomRouter(baseRouter, freehandSegments) {
 }
 
 function combineRoutes(routes, waypoints, callback, context) {
+  // Clear existing freehand lines and redraw with proper connections
+  freehandLines.forEach(function(line) {
+    map.removeLayer(line);
+  });
+  freehandLines = [];
+  
   var combinedCoordinates = [];
   var combinedInstructions = [];
   var totalDistance = 0;
@@ -423,6 +476,67 @@ function combineRoutes(routes, waypoints, callback, context) {
   
   routes.forEach(function(route, idx) {
     if (route && route.coordinates) {
+      // Handle freehand segments with proper connections
+      if (route.isFreehand) {
+        var actualStart = route.actualStart || L.latLng(route.coordinates[0].lat, route.coordinates[0].lng);
+        var actualEnd = route.actualEnd || L.latLng(route.coordinates[1].lat, route.coordinates[1].lng);
+        
+        // If we have a previous route, connect from its actual end point
+        if (idx > 0 && routes[idx - 1] && routes[idx - 1].coordinates.length > 0) {
+          var prevEnd = routes[idx - 1].coordinates[routes[idx - 1].coordinates.length - 1];
+          actualStart = L.latLng(prevEnd.lat, prevEnd.lng);
+        }
+        
+        // If we have a next route, connect to its actual start point  
+        if (idx < routes.length - 1 && routes[idx + 1] && routes[idx + 1].coordinates.length > 0) {
+          var nextStart = routes[idx + 1].coordinates[0];
+          actualEnd = L.latLng(nextStart.lat, nextStart.lng);
+        }
+        
+        // Draw the main freehand segment (solid line between route endpoints)
+        var freehandLine = L.polyline([actualStart, actualEnd], {
+          color: '#ff8800',
+          weight: 4,
+          opacity: 0.8,
+          dashArray: '10, 10',
+          interactive: false
+        }).addTo(map);
+        freehandLines.push(freehandLine);
+        
+        // Draw dashed connector from start waypoint to actual start (if needed)
+        if (route.waypointStart && route.waypointStart.distanceTo(actualStart) > 5) {
+          var startConnector = L.polyline([route.waypointStart, actualStart], {
+            color: '#ff8800',
+            weight: 2,
+            opacity: 0.4,
+            dashArray: '3, 6',
+            interactive: false
+          }).addTo(map);
+          freehandLines.push(startConnector);
+        }
+        
+        // Draw dashed connector from actual end to end waypoint (if needed)
+        if (route.waypointEnd && actualEnd.distanceTo(route.waypointEnd) > 5) {
+          var endConnector = L.polyline([actualEnd, route.waypointEnd], {
+            color: '#ff8800', 
+            weight: 2,
+            opacity: 0.4,
+            dashArray: '3, 6',
+            interactive: false
+          }).addTo(map);
+          freehandLines.push(endConnector);
+        }
+        
+        // Update route coordinates to reflect actual connection points
+        route.coordinates = [
+          {lat: actualStart.lat, lng: actualStart.lng},
+          {lat: actualEnd.lat, lng: actualEnd.lng}
+        ];
+        
+        // Recalculate distance with actual connection points
+        route.summary.totalDistance = actualStart.distanceTo(actualEnd);
+      }
+      
       // Avoid duplicating connection points between segments
       if (combinedCoordinates.length > 0 && route.coordinates.length > 0) {
         var lastCoord = combinedCoordinates[combinedCoordinates.length - 1];
