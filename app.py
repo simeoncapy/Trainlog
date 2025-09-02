@@ -2757,7 +2757,7 @@ def login():
             )
             changeLang(user.lang, session)
 
-            return redirect(url_for("user_home", username=username))
+            return redirect(url_for("landing", username=username))
         else:
             # Log denied login attempts
             if user is None:
