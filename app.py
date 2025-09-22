@@ -215,6 +215,7 @@ from src.trips import (
     delete_ticket_from_db
 )
 from src.paths import Path
+from src.carbon import *
 
 app = Flask(__name__)
 app.config['DEBUG'] = True
@@ -5458,6 +5459,9 @@ def processPublicTrips(tripIds):
         paths[path["trip_id"]] = path["path"]
 
     total_price = 0
+    total_carbon = 0
+    total_distance = 0
+    
     for tripId in tripIds:
         with managed_cursor(mainConn) as cursor:
             trip = formatTrip(
@@ -5488,6 +5492,7 @@ def processPublicTrips(tripIds):
             trip.pop("operator_name", None)
             trip.pop("logo_url", None)
 
+        # Process pricing
         if trip["ticket_id"] not in (None, ""):
             with managed_cursor(mainConn) as cursor:
                 cursor.execute(getTicket, (trip["ticket_id"],))
@@ -5515,6 +5520,16 @@ def processPublicTrips(tripIds):
             if trip["price_in_user_currency"] is not None:
                 total_price += trip["price_in_user_currency"]
 
+        # Calculate carbon footprint
+        path_data = json.loads(paths[trip["uid"]]) if trip["uid"] in paths else []
+        trip_carbon = calculate_carbon_footprint_for_trip(trip, path_data)
+        trip["carbon_footprint"] = round(trip_carbon, 2)
+        
+        # Add to totals
+        total_carbon += trip_carbon
+        if trip.get('trip_length', 0) > 0:
+            total_distance += trip['trip_length'] / 1000  # Convert to km
+
         user = User.query.filter_by(username=trip["username"]).first()
         if (
             not session.get(user.username)
@@ -5526,16 +5541,24 @@ def processPublicTrips(tripIds):
             {
                 "time": trip["time"],
                 "trip": dict(trip),
-                "path": json.loads(paths[trip["uid"]]),
+                "path": path_data,
             }
         )
+    
     sortedTripList = sorted(tripList, key=lambda d: d["trip"]["uid"], reverse=True)
     sortedTripList = sorted(
         sortedTripList,
         key=lambda d: d["trip"]["utc_filtered_start_datetime"],
         reverse=True,
     )
-    priceDict = {"total_price": total_price, "user_currency": user_currency}
+    
+    priceDict = {
+        "total_price": total_price, 
+        "user_currency": user_currency,
+        "total_carbon": round(total_carbon, 2),
+        "total_distance": round(total_distance, 2)
+    }
+    
     return sortedTripList, priceDict
 
 

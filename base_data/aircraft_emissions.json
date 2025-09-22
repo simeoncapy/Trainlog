@@ -1,0 +1,435 @@
+{
+  "flight_categories": {
+    "short_regional": {
+      "distance_km_max": 560
+    },
+    "regional": {
+      "distance_km_min": 560,
+      "distance_km_max": 1300
+    },
+    "short_haul": {
+      "distance_km_min": 1300,
+      "distance_km_max": 1900
+    },
+    "medium_haul": {
+      "distance_km_min": 1900,
+      "distance_km_max": 5600
+    },
+    "long_haul": {
+      "distance_km_min": 5600
+    }
+  },
+  "aircraft": {
+    "A148": {
+      "short_regional": 0.1439,
+      "regional": 0.0989,
+      "short_haul": 0.0937,
+      "all": 0.1122
+    },
+    "AT45": {
+      "short_regional": 0.0827,
+      "all": 0.0827
+    },
+    "AT72": {
+      "short_regional": 0.0685,
+      "all": 0.0685
+    },
+    "AT76": {
+      "short_regional": 0.0682,
+      "regional": 0.0617,
+      "all": 0.065
+    },
+    "B190": {
+      "short_regional": 0.1658,
+      "all": 0.1658
+    },
+    "CRJ1": {
+      "short_regional": 0.1392,
+      "regional": 0.1178,
+      "all": 0.1285
+    },
+    "CRJ2": {
+      "short_regional": 0.1373,
+      "regional": 0.1134,
+      "all": 0.1254
+    },
+    "CRJ7": {
+      "short_regional": 0.1328,
+      "regional": 0.1103,
+      "all": 0.1215
+    },
+    "CRJ9": {
+      "short_regional": 0.1242,
+      "regional": 0.0995,
+      "all": 0.1119
+    },
+    "DH8D": {
+      "short_regional": 0.0872,
+      "regional": 0.0881,
+      "all": 0.0877
+    },
+    "D228": {
+      "short_regional": 0.1558,
+      "all": 0.1558
+    },
+    "D328": {
+      "short_regional": 0.1201,
+      "regional": 0.1097,
+      "all": 0.1149
+    },
+    "E120": {
+      "short_regional": 0.0966,
+      "all": 0.0966
+    },
+    "E135": {
+      "short_regional": 0.1396,
+      "regional": 0.1226,
+      "all": 0.1311
+    },
+    "E145": {
+      "short_regional": 0.1109,
+      "regional": 0.0977,
+      "all": 0.1043
+    },
+    "SF34": {
+      "short_regional": 0.1083,
+      "regional": 0.0965,
+      "all": 0.1024
+    },
+    "SB20": {
+      "short_regional": 0.1103,
+      "regional": 0.097,
+      "all": 0.1036
+    },
+    "BCS1": {
+      "regional": 0.0707,
+      "short_haul": 0.0575,
+      "all": 0.0641
+    },
+    "BCS3": {
+      "regional": 0.0629,
+      "short_haul": 0.0516,
+      "medium_haul": 0.0508,
+      "all": 0.0551
+    },
+    "A19N": {
+      "regional": 0.0727,
+      "short_haul": 0.0556,
+      "all": 0.0641
+    },
+    "A20N": {
+      "regional": 0.0571,
+      "short_haul": 0.0488,
+      "all": 0.0529
+    },
+    "A21N": {
+      "regional": 0.0541,
+      "short_haul": 0.0497,
+      "medium_haul": 0.0612,
+      "all": 0.055
+    },
+    "AT43": {
+      "regional": 0.0819,
+      "all": 0.0819
+    },
+    "B733": {
+      "regional": 0.0873,
+      "all": 0.0873
+    },
+    "B736": {
+      "regional": 0.0905,
+      "short_haul": 0.0793,
+      "all": 0.0849
+    },
+    "B737": {
+      "regional": 0.0803,
+      "short_haul": 0.0697,
+      "all": 0.075
+    },
+    "B37M": {
+      "regional": 0.0721,
+      "short_haul": 0.0565,
+      "all": 0.0643
+    },
+    "B738": {
+      "regional": 0.0698,
+      "short_haul": 0.0638,
+      "all": 0.0668
+    },
+    "B38M": {
+      "regional": 0.0577,
+      "short_haul": 0.0527,
+      "medium_haul": 0.0536,
+      "all": 0.0547
+    },
+    "B739": {
+      "regional": 0.067,
+      "short_haul": 0.0599,
+      "all": 0.0634
+    },
+    "B39M": {
+      "regional": 0.0577,
+      "short_haul": 0.0509,
+      "medium_haul": 0.0637,
+      "all": 0.0574
+    },
+    "B752": {
+      "regional": 0.0737,
+      "short_haul": 0.0709,
+      "medium_haul": 0.0756,
+      "all": 0.0734
+    },
+    "B753": {
+      "regional": 0.0673,
+      "short_haul": 0.0607,
+      "all": 0.064
+    },
+    "CRJX": {
+      "regional": 0.0838,
+      "all": 0.0838
+    },
+    "E75S": {
+      "regional": 0.0873,
+      "all": 0.0873
+    },
+    "E290": {
+      "regional": 0.0789,
+      "all": 0.0789
+    },
+    "E295": {
+      "regional": 0.0679,
+      "all": 0.0679
+    },
+    "E170": {
+      "regional": 0.1024,
+      "all": 0.1024
+    },
+    "E75L": {
+      "regional": 0.1002,
+      "all": 0.1002
+    },
+    "E190": {
+      "regional": 0.0895,
+      "all": 0.0895
+    },
+    "E195": {
+      "regional": 0.0829,
+      "all": 0.0829
+    },
+    "PC12": {
+      "regional": 0.1435,
+      "all": 0.1435
+    },
+    "SU95": {
+      "regional": 0.0903,
+      "all": 0.0903
+    },
+    "A319": {
+      "short_haul": 0.0744,
+      "all": 0.0744
+    },
+    "A320": {
+      "short_haul": 0.0657,
+      "medium_haul": 0.0611,
+      "all": 0.0634
+    },
+    "A321": {
+      "short_haul": 0.0632,
+      "all": 0.0632
+    },
+    "A332": {
+      "short_haul": 0.0602,
+      "medium_haul": 0.0784,
+      "long_haul": 0.0834,
+      "all": 0.074
+    },
+    "B788": {
+      "short_haul": 0.0699,
+      "medium_haul": 0.0623,
+      "long_haul": 0.0748,
+      "all": 0.069
+    },
+    "B789": {
+      "short_haul": 0.0603,
+      "medium_haul": 0.0598,
+      "long_haul": 0.0663,
+      "all": 0.0621
+    },
+    "B78X": {
+      "short_haul": 0.0571,
+      "long_haul": 0.0578,
+      "all": 0.0574
+    },
+    "KODI": {
+      "short_haul": 0.2485,
+      "all": 0.2485
+    },
+    "A333": {
+      "medium_haul": 0.0751,
+      "long_haul": 0.0783,
+      "all": 0.0767
+    },
+    "A339": {
+      "medium_haul": 0.061,
+      "long_haul": 0.0624,
+      "all": 0.0617
+    },
+    "A343": {
+      "medium_haul": 0.0819,
+      "long_haul": 0.088,
+      "all": 0.0849
+    },
+    "A388": {
+      "medium_haul": 0.0787,
+      "long_haul": 0.0812,
+      "all": 0.08
+    },
+    "B744": {
+      "medium_haul": 0.0816,
+      "long_haul": 0.0862,
+      "all": 0.0839
+    },
+    "B748": {
+      "medium_haul": 0.0668,
+      "long_haul": 0.0779,
+      "all": 0.0724
+    },
+    "B762": {
+      "medium_haul": 0.0784,
+      "all": 0.0784
+    },
+    "B763": {
+      "medium_haul": 0.0734,
+      "all": 0.0734
+    },
+    "B764": {
+      "medium_haul": 0.0657,
+      "all": 0.0657
+    },
+    "B772": {
+      "medium_haul": 0.0717,
+      "long_haul": 0.078,
+      "all": 0.0748
+    },
+    "B773": {
+      "medium_haul": 0.0675,
+      "all": 0.0675
+    },
+    "M21": {
+      "medium_haul": 0.0587,
+      "all": 0.0587
+    },
+    "A338": {
+      "long_haul": 0.0692,
+      "all": 0.0692
+    },
+    "A359": {
+      "long_haul": 0.0652,
+      "all": 0.0652
+    },
+    "A35K": {
+      "long_haul": 0.0685,
+      "all": 0.0685
+    },
+    "B77L": {
+      "long_haul": 0.0819,
+      "all": 0.0819
+    },
+    "B77W": {
+      "long_haul": 0.075,
+      "all": 0.075
+    },
+    "B779": {
+      "long_haul": 0.0613,
+      "all": 0.0613
+    },
+    "B731": {
+      "short_regional": 0.1186,
+      "all": 0.1186
+    },
+    "B732": {
+      "short_regional": 0.1103,
+      "all": 0.1103
+    },
+    "B734": {
+      "regional": 0.082,
+      "all": 0.082
+    },
+    "B735": {
+      "regional": 0.074,
+      "all": 0.074
+    },
+    "B712": {
+      "short_haul": 0.0832,
+      "all": 0.0832
+    },
+    "MD82": {
+      "short_haul": 0.0854,
+      "all": 0.0854
+    },
+    "MD88": {
+      "short_haul": 0.0833,
+      "all": 0.0833
+    },
+    "A306": {
+      "short_haul": 0.0924,
+      "all": 0.0924
+    },
+    "A318": {
+      "short_haul": 0.0942,
+      "all": 0.0942
+    },
+    "T154": {
+      "regional": 0.1633,
+      "all": 0.1633
+    },
+    "T204": {
+      "regional": 0.072,
+      "all": 0.072
+    },
+    "F100": {
+      "regional": 0.0909,
+      "all": 0.0909
+    },
+    "AT44": {
+      "short_regional": 0.105,
+      "all": 0.105
+    },
+    "AT46": {
+      "short_regional": 0.0853,
+      "all": 0.0853
+    },
+    "DH8A": {
+      "short_regional": 0.0936,
+      "all": 0.0936
+    },
+    "DH8B": {
+      "short_regional": 0.0969,
+      "all": 0.0969
+    },
+    "DH8C": {
+      "short_regional": 0.0945,
+      "all": 0.0945
+    },
+    "E140": {
+      "regional": 0.1289,
+      "all": 0.1289
+    },
+    "RJ85": {
+      "regional": 0.0889,
+      "all": 0.0889
+    },
+    "BN2P": {
+      "short_regional": 0.1575,
+      "all": 0.1575
+    },
+    "C919": {
+      "short_haul": 0.0581,
+      "all": 0.0581
+    },
+    "B3XM": {
+      "short_regional": 0.0438,
+      "all": 0.0438
+    }
+  }
+}

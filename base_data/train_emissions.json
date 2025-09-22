@@ -1,0 +1,22 @@
+{
+  "FR": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 1.0, "diesel_fuel": 75.0, "diesel_share": 0.20 },
+  "DE": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 57.0, "diesel_fuel": 75.0, "diesel_share": 0.25 },
+  "ES": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 18.0, "diesel_fuel": 75.0, "diesel_share": 0.20 },
+  "IT": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 46.0, "diesel_fuel": 75.0, "diesel_share": 0.30 },
+  "GB": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 31.0, "diesel_fuel": 75.0, "diesel_share": 0.40 },
+  "NL": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 25.0, "diesel_fuel": 75.0, "diesel_share": 0.05 },
+  "DK": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 19.0, "diesel_fuel": 75.0, "diesel_share": 0.35 },
+  "BE": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 27.0, "diesel_fuel": 75.0, "diesel_share": 0.10 },
+  "SE": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 5.0,  "diesel_fuel": 75.0, "diesel_share": 0.10 },
+  "NO": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 3.0,  "diesel_fuel": 75.0, "diesel_share": 0.15 },
+  "FI": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 10.0, "diesel_fuel": 75.0, "diesel_share": 0.15 },
+  "CH": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 4.0,  "diesel_fuel": 75.0, "diesel_share": 0.05 },
+  "AT": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 20.0, "diesel_fuel": 75.0, "diesel_share": 0.15 },
+  "PL": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 350.0,"diesel_fuel": 75.0, "diesel_share": 0.35 },
+  "CZ": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 280.0,"diesel_fuel": 75.0, "diesel_share": 0.30 },
+  "HU": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 200.0,"diesel_fuel": 75.0, "diesel_share": 0.30 },
+  "SK": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 150.0,"diesel_fuel": 75.0, "diesel_share": 0.30 },
+  "PT": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 50.0, "diesel_fuel": 75.0, "diesel_share": 0.30 },
+  "IE": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 300.0,"diesel_fuel": 75.0, "diesel_share": 0.90 },
+  "default": { "infrastructure": 6.5, "manufacturing": 0.8, "electric_upstream": 40.0, "diesel_fuel": 75.0, "diesel_share": 0.25 }
+}
