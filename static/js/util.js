@@ -344,17 +344,31 @@ function getFlagEmojiListNew(countriesString){
   var flagList = "\u00A0";
   var countriesDict = JSON.parse(countriesString);
   var countriesList = Object.keys(countriesDict);
-
-    
+   
   if (countriesList.indexOf("UN") !== -1) {countriesList.splice(countriesList.indexOf("UN"), 1); countriesList.push("UN");}
-
   flagList = [];
-  countriesList.forEach( 
+  countriesList.forEach(
     function(countryCode){
       var flag = getFlagEmoji(countryCode);
       var CountryName = regionNames.of(countryCode);
-      if (countriesList.length > 1 && !(countriesList.length == 2 && countriesDict[countriesList[0]] == countriesDict[countriesList[1]])) {
-        title = `${CountryName} - ${mToKm(countriesDict[countryCode])}km`;
+      var countryData = countriesDict[countryCode];
+      
+      var title;
+      if (countriesList.length > 1 && !(countriesList.length == 2 && JSON.stringify(countriesDict[countriesList[0]]) == JSON.stringify(countriesDict[countriesList[1]]))) {
+        if (typeof countryData === 'number') {
+          // Simple distance format: {"FR": 100}
+          title = `${CountryName} - ${mToKm(countryData)}km`;
+        } else if (typeof countryData === 'object' && countryData !== null) {
+          // Complex format: {"FR": {elec: 50, nonelec: 45}}
+          var parts = [];
+          if (countryData.elec) {
+            parts.push(`⚡${mToKm(countryData.elec)}km`);
+          }
+          if (countryData.nonelec) {
+            parts.push(`🛢️${mToKm(countryData.nonelec)}km`);
+          }
+          title = `${CountryName} - ${parts.join(' ')}`;
+        }
       } else {
         title = `${CountryName}`;
       }
@@ -362,7 +376,7 @@ function getFlagEmojiListNew(countriesString){
     }
   )
   flagList=flagList.join(' ')
-  
+ 
   return flagList;
 }
 

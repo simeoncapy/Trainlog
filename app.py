@@ -216,6 +216,7 @@ from src.trips import (
 )
 from src.paths import Path
 from src.carbon import *
+from src.graphhopper import convert_graphhopper_to_osrm
 
 app = Flask(__name__)
 app.config['DEBUG'] = True
@@ -878,7 +879,7 @@ def saveTripToDb(username, newTrip, newPath, trip_type="train"):
         )
         countries = json.dumps(countries)
     else:
-        countries = getCountriesFromPath(newPath, newTrip["type"])
+        countries = getCountriesFromPath(newPath, newTrip["type"], newTrip["details"])
 
     if "originManualToggle" in newTrip.keys():
         saveManualStation(
@@ -4446,7 +4447,7 @@ def forwardRouting(path, routingType, args=None):
     radiuses = None  # initialize in case ferry needs it later
 
     if routingType == "train":
-        base = "http://routing.trainlog.me:5000"
+        base = "https://openrailrouting.maahl.net"
     elif routingType == "ferry":
         base = "http://routing.trainlog.me:5001"
         coord_pairs = [
@@ -4561,6 +4562,25 @@ def forwardRouting(path, routingType, args=None):
             full_url += f"&radiuses={radiuses}"
         return full_url
 
+    def build_gh_url(base_url):
+        coords_part = path.split('/')[-1]  # Get the coordinates part
+        
+        # Convert OSRM coordinates to GraphHopper point parameters
+        points = []
+        for coord in coords_part.split(';'):
+            lon, lat = coord.split(',')
+            points.append(f"point={lat}%2C{lon}")
+        
+        point_params = "&".join(points)
+        
+        # Build GraphHopper URL with your existing args plus the points
+        full_url = f"{base_url}/route?{point_params}&type=json&profile=all_tracks&details=electrified&details=distance"
+        
+        if routingType == "ferry" and radiuses:
+            full_url += f"&radiuses={radiuses}"
+        
+        return full_url
+
     # Only apply try/fallback logic for BUS routing
     if routingType == "bus":
         try:
@@ -4576,6 +4596,8 @@ def forwardRouting(path, routingType, args=None):
             print(f"Router failed: {base}, falling back to OSRM. Reason: {e}")
             fallback_url = build_url(routers["fallback"][0])
             return make_response(requests.get(fallback_url).json(), 235)
+    elif routingType == "train":
+        return convert_graphhopper_to_osrm(requests.get(build_gh_url(base)).json())
     else:
         # Other routing types: no fallback
         return requests.get(build_url(base)).text
