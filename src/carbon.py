@@ -153,10 +153,12 @@ def split_km_for_country(cc, value_m):
 def calculate_rail_emissions(distance_km, countries, rail_type='train', start_datetime=None, force_electric=False):
     """
     Calculate rail transport CO2 emissions in kg CO2e (train/metro/tram/aerialway)
-    
+   
     Args:
         distance_km: Total distance (not used when countries dict provided)
-        countries: Dict of country codes and distances, or JSON string
+        countries: Dict of country codes and distances/breakdown, or JSON string
+                  Old format: {"FR": 100} (distance in km)
+                  New format: {"FR": {"elec": 773939.89, "nonelec": 62488.40}} (distances in meters)
         rail_type: Type of rail transport ('train', 'metro', 'tram', 'aerialway')
         start_datetime: Trip date (yyyy-mm-dd string, -1, or 1)
         force_electric: If True, treat all trains as electric
@@ -166,7 +168,6 @@ def calculate_rail_emissions(distance_km, countries, rail_type='train', start_da
     """
     # Get rail base emissions (construction + infrastructure) based on type
     rail_base = EMISSION_FACTORS.get(rail_type, EMISSION_FACTORS['train'])
-    print(rail_base)
     base_emissions_g_per_km = rail_base['construction'] + rail_base['infrastructure']
     
     # Extract year from start_datetime
@@ -202,15 +203,28 @@ def calculate_rail_emissions(distance_km, countries, rail_type='train', start_da
     
     # Process each country
     for country_code, distance_value in countries.items():
-        # Get country-specific diesel share
-        factors = TRAIN_FACTORS.get(country_code, TRAIN_FACTORS['default'])
-        
+        # Determine if this is old format (number) or new format (dict)
+        if isinstance(distance_value, (int, float)):
+            # Old format: {"FR": 200}
+            # Get country-specific diesel share
+            factors = TRAIN_FACTORS.get(country_code, TRAIN_FACTORS['default'])
+            
+            # Split into electric and diesel kilometers using existing logic
+            electric_km, diesel_km = split_km_for_country(country_code, distance_value)
+            
+        elif isinstance(distance_value, dict):
+            # New format: {"FR": {"elec": 120, "nonelec": 80}} 
+            electric_km = distance_value.get('elec', 0) / 1000
+            diesel_km = distance_value.get('nonelec', 0) / 1000
+            
+        else:
+            # Fallback - treat as old format
+            factors = TRAIN_FACTORS.get(country_code, TRAIN_FACTORS['default'])
+            electric_km, diesel_km = split_km_for_country(country_code, distance_value)
+       
         # Get country-specific grid intensity for the year
         grid_intensity_g_per_kwh = get_grid_intensity_for_country_year(country_code, year)
-        
-        # Split into electric and diesel kilometers
-        electric_km, diesel_km = split_km_for_country(country_code, distance_value)
-        
+       
         # Force all to electric if requested
         if force_electric:
             electric_km += diesel_km

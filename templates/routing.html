@@ -21,6 +21,7 @@
 var id = getGetParams().get("id");
 var newTrip = JSON.parse(sessionStorage.getItem(id));
 var currentRoute;
+var routeDetails = null;
 
 const texts = {
   "routeTitle": "{{routeTitle}}",
@@ -71,6 +72,7 @@ async function saveTrip(continueTrip=false){
         newTrip["estimated_trip_duration"] = 0
     }
     sidebar.setContent(spinnerContent);
+    newTrip["details"] = routeDetails;
     $.post({
         url:'{{url_for("saveTrip", username=username)}}',
         data:{

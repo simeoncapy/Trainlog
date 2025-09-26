@@ -36,6 +36,44 @@ antpathStyles =  {
 
 var markergroup = new L.featureGroup(markerIconStart, markerIconEnd);
 
+var routeDetails = null;
+(function() {
+  var originalOpen = XMLHttpRequest.prototype.open;
+  var originalSend = XMLHttpRequest.prototype.send;
+  
+  XMLHttpRequest.prototype.open = function(method, url) {
+    this._requestUrl = url;
+    return originalOpen.apply(this, arguments);
+  };
+  
+  XMLHttpRequest.prototype.send = function() {
+    var self = this;
+    var originalOnReadyStateChange = this.onreadystatechange;
+    
+    this.onreadystatechange = function() {
+      if (self.readyState === 4 && self.status === 200) {
+        // Check if this is an OSRM routing request
+        if (self._requestUrl && self._requestUrl.includes('/route/')) {
+          try {
+            var response = JSON.parse(self.responseText);
+            if (response.routes && response.routes[0] && response.routes[0].details) {
+              routeDetails = response.routes[0].details;              
+            }
+          } catch(e) {
+            console.error('Error parsing OSRM response:', e);
+          }
+        }
+      }
+      
+      if (originalOnReadyStateChange) {
+        return originalOnReadyStateChange.apply(this, arguments);
+      }
+    };
+    
+    return originalSend.apply(this, arguments);
+  };
+})();
+
 function downloadCurrentRouteAsGeoJSON(distance) {
   var routeCoordinates = currentRoute.map(function(point) {
     return [point.lng, point.lat];
@@ -344,6 +382,11 @@ function routing(map, showSidebar=true, type){
       currentRoute = this._selectedRoute.coordinates;
       newTrip["trip_length"] = this._selectedRoute.summary.totalDistance;
       newTrip["estimated_trip_duration"] = this._selectedRoute.summary.totalTime;
+      
+      if(routeDetails) {
+        newTrip["details"] = routeDetails;
+      }
+      
       const waypoints = this._selectedRoute.waypoints;
 
       if(waypoints.length > 2) {

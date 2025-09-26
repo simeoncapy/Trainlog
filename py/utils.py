@@ -213,7 +213,7 @@ def getDistance(orig, dest):
     return distance
 
 
-def getCountriesFromPath(path, type):
+def getCountriesFromPath(path, type, routing_details=None):
     countries = {}
     country = None
 
@@ -238,10 +238,31 @@ def getCountriesFromPath(path, type):
         countries[end_country] = countries.get(end_country, 0) + total_distance / 2
 
         return json.dumps(countries)
-
+    
+    # Check if we should use electrification data for trains
+    use_electrification = (
+        type == "train" and 
+        routing_details and 
+        "electrified" in routing_details
+    )
+    
+    # Create electrification lookup for train routes
+    electrification_map = {}
+    if use_electrification:
+        for elec_segment in routing_details["electrified"]:
+            start_idx, end_idx, elec_type = elec_segment
+            for i in range(start_idx, end_idx):
+                electrification_map[i] = elec_type
+    
     for index in range(1, len(path)):
         segment_distance = getDistance(path[index - 1], path[index])
-
+        
+        # Determine electrification status for this segment
+        is_electrified = False
+        if use_electrification and index - 1 in electrification_map:
+            elec_status = electrification_map[index - 1]
+            is_electrified = elec_status in ["contact_line", "rail", "yes"]
+        
         if type == "ferry" and segment_distance > 10:
             num_fake_points = int(segment_distance / 10)
             interpolated_points = interpolate_points(
@@ -265,16 +286,43 @@ def getCountriesFromPath(path, type):
 
         for country, count in segment_countries.items():
             if country not in countries:
-                countries[country] = 0
-            countries[country] += (segment_distance * count) / len(interpolated_points)
-
+                if use_electrification:
+                    countries[country] = {"elec": 0, "nonelec": 0}
+                else:
+                    countries[country] = 0
+            
+            segment_country_distance = (segment_distance * count) / len(interpolated_points)
+            
+            if use_electrification:
+                if is_electrified:
+                    countries[country]["elec"] += segment_country_distance
+                else:
+                    countries[country]["nonelec"] += segment_country_distance
+            else:
+                if isinstance(countries[country], dict):
+                    countries[country] = segment_country_distance
+                else:
+                    countries[country] += segment_country_distance
+    
     if countries == {}:
-        country = getCountryFromCoordinates(lat=path[0]["lat"], lng=path[0]["lng"])[
-            "countryCode"
-        ]
-        countries = {country: 0}
-
+        country_data = getCountryFromCoordinates(lat=path[0]["lat"], lng=path[0]["lng"])
+        country = country_data["countryCode"] if country_data else "UN"
+        if use_electrification:
+            countries = {country: {"elec": 0, "nonelec": 0}}
+        else:
+            countries = {country: 0}
+    print(countries)
     return json.dumps(countries)
+
+# Helper function to parse the routing details
+def parseRoutingDetails(routing_response):
+    """
+    Parse the routing response to extract distance and electrification data
+    """
+    details = {}
+    if "details" in routing_response:
+        details = routing_response["details"]
+    return details
 
 
 def getDistanceFromPath(path):
