@@ -4574,7 +4574,7 @@ def forwardRouting(path, routingType, args=None):
         point_params = "&".join(points)
         
         # Build GraphHopper URL with your existing args plus the points
-        full_url = f"{base_url}/route?{point_params}&type=json&profile=all_tracks&details=electrified&details=distance"
+        full_url = f"{base_url}/route?{point_params}&type=json&profile=all&details=electrified&details=distance"
         
         if routingType == "ferry" and radiuses:
             full_url += f"&radiuses={radiuses}"
