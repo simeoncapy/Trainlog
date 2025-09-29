@@ -1,0 +1,1032 @@
+{% extends "bootstrap/layout.html" %}
+{% block content %}
+
+{% include "bootstrap/no_user_nav.html"%}
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css">
+<link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+<style>
+  :root{
+    --air: rgb(64, 185, 31);
+    --train: rgb(82, 176, 254);
+    --tram: rgb(162, 215, 255);
+    --metro: rgb(0, 69, 149);
+    --bus: rgb(159, 75, 187);
+    --ferry: rgb(30, 30, 124);
+    --car: rgb(166, 143, 205);
+    --cycle: rgb(110, 33, 26);
+    --walk: rgb(232, 140, 0);
+    --aerialway: rgb(175, 207, 59);
+  }
+
+  /* Layout: left column scrolls independently; map keeps its size */
+  .layout-row { height: calc(100vh - 120px); }
+  .left-card { height: 100%; display: flex; flex-direction: column; }
+  .left-scroll { flex: 1 1 auto; overflow: auto; padding-bottom: .5rem; }
+  .left-footer { flex: 0 0 auto; padding:.75rem; border-top: 1px solid rgba(0,0,0,.075); background:#fff; }
+
+  /* Map sizing + reduce grey flashes during resize */
+  #carbonMap { width: 100%; height: 100%; min-height: 420px; }
+  .leaflet-container { background: #f7f7f7; }
+
+  /* jQuery UI autocomplete menu should appear over Bootstrap cards */
+  .ui-autocomplete { z-index: 2000 !important; }
+
+  /* Route markers with subtle shadow */
+  .route-marker { filter: drop-shadow(0 1px 2px rgba(0,0,0,.25)); }
+
+  /* Autocomplete item layout */
+  .ac-item { display:flex; align-items:center; gap:.5rem; padding:.35rem .5rem; }
+  .ac-flag { font-size: 1.1rem; width: 1.4rem; text-align:center; flex: 0 0 1.4rem; }
+  .ac-text { display:flex; flex-direction:column; line-height: 1.1; }
+  .ac-sub { font-size: .8rem; opacity: .75; }
+
+  /* Transport selector pills */
+  .transport-pill { cursor:pointer; }
+  .transport-pill.active { border-color: var(--bs-primary); background: var(--bs-primary); color: #fff; }
+
+  /* Results stick on tall screens but still inside the left scroll area */
+  @media (min-width: 992px) {
+    .results-sticky { position: sticky; top: 0.5rem; }
+  }
+
+  /* Loading overlay over the map */
+  .loading-overlay {
+    position: absolute; inset: 0;
+    background: rgba(255,255,255,0.85);
+    display: none; align-items: center; justify-content: center;
+    z-index: 1100; pointer-events: none;
+  }
+  .loading-overlay.show { display: flex; }
+
+  /* Collapsed segment header chip */
+  .seg-chip { width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+              color:#fff;font-weight:700;border:2px solid #fff; margin-right:.5rem; }
+</style>
+
+<div class="container-fluid py-3">
+  <div class="row g-3 layout-row">
+    <!-- Sidebar (independent scroll) -->
+    <div class="col-12 col-lg-4">
+      <div class="card shadow-sm left-card">
+        <div class="card-body d-flex flex-column" style="gap:.5rem">
+          <div class="d-flex align-items-center">
+            <div class="display-6 me-2">🌍</div>
+            <div>
+              <h2 class="h5 mb-0">Carbon Footprint Calculator</h2>
+              <small class="text-muted">Calculate CO₂ emissions for your trips without saving</small>
+            </div>
+          </div>
+
+          <!-- Scrollable content -->
+          <div class="left-scroll">
+            <!-- Segments -->
+            <div id="segments-container" class="d-flex flex-column gap-3"></div>
+
+            <!-- Add Segment (below the list) -->
+            <div class="d-grid mt-2 mb-3" id="add-segment-wrapper">
+              <button class="btn btn-primary" id="add-segment-btn" onclick="addSegment()">
+                <i class="fa-solid fa-plus me-2"></i>Add Trip Segment
+              </button>
+            </div>
+
+            <!-- Results -->
+            <div id="results" class="results-sticky" style="display:none;">
+              <div class="alert alert-success mb-2">
+                <div class="d-flex justify-content-between">
+                  <strong>Total Distance</strong>
+                  <span id="total-distance">-</span>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <strong>Total Duration</strong>
+                  <span id="total-duration">-</span>
+                </div>
+                <hr>
+                <div class="d-flex justify-content-between align-items-center">
+                  <strong class="fs-5">Total CO₂ Emissions</strong>
+                  <span class="badge bg-success-subtle text-success-emphasis fs-5" id="total-carbon">-</span>
+                </div>
+              </div>
+              <div id="segment-results"></div>
+            </div>
+          </div>
+
+          <!-- Footer: Calculate button stays visible -->
+          <div class="left-footer">
+            <div class="d-grid gap-2">
+              <button class="btn btn-success btn-lg" onclick="calculateCarbon()">
+                <i class="fa-solid fa-calculator me-2"></i>Calculate Carbon Footprint
+              </button>
+              <div class="text-muted small text-center">Tip: validate a segment to collapse it and keep the list tidy.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Map -->
+    <div class="col-12 col-lg-8">
+      <div class="card shadow-sm h-100">
+        <div class="card-body p-0 position-relative h-100">
+          <div id="carbonMap"></div>
+          <div class="loading-overlay" id="loadingOverlay">
+            <div class="text-center">
+              <div class="spinner-border" role="status" aria-hidden="true"></div>
+              <div class="mt-2 text-muted">Calculating…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Dependencies #}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+<script>
+/* --------------------------
+   Globals & Config
+--------------------------- */
+let segments = [];
+let segmentCounter = 0;
+let map;
+let routeControls = [];
+let globalStationDict = {};  // Reused dictionary for autocomplete items
+
+/* Types + icons; NOTE: colors come from CSS variables */
+const vehicleTypes = {
+  'train': { name: 'Train',    icon: 'fa-train',         color: 'var(--train)' },
+  'bus':   { name: 'Bus',      icon: 'fa-bus',           color: 'var(--bus)' },
+  'air':   { name: 'Flight',   icon: 'fa-plane',         color: 'var(--air)' },
+  'ferry': { name: 'Ferry',    icon: 'fa-ferry',         color: 'var(--ferry)' },
+  'car':   { name: 'Car',      icon: 'fa-car',           color: 'var(--car)' },
+  'metro': { name: 'Metro',    icon: 'fa-subway',        color: 'var(--metro)' },
+  'tram':  { name: 'Tram',     icon: 'fa-train-tram',    color: 'var(--tram)' },
+  'cycle': { name: 'Bicycle',  icon: 'fa-person-biking', color: 'var(--cycle)' },
+  'walk':  { name: 'Walking',  icon: 'fa-person-walking',color: 'var(--walk)' }
+};
+
+/* Search endpoints */
+const stationURLs = {
+  'bus':   '/stationAutocomplete?osm_tag=amenity:bus_station&osm_tag=highway:bus_stop',
+  'train': '/stationAutocomplete?osm_tag=railway:halt&osm_tag=railway:station',
+  'tram':  '/stationAutocomplete?osm_tag=railway:tram_stop&osm_tag=railway:station',
+  'metro': '/stationAutocomplete?osm_tag=railway:station&osm_tag=railway:subway_entrance',
+  'ferry': '/stationAutocomplete?osm_tag=amenity:ferry_terminal',
+  'air':   '/airportAutocomplete/',
+  'car':   '/stationAutocomplete',
+  'walk':  '/stationAutocomplete',
+  'cycle': '/stationAutocomplete'
+};
+
+/* Routing backends + profiles */
+const routingConfig = {
+  'train': { url: '/forwardRouting/train/route/v1', profile: 'train' },
+  'tram':  { url: '/forwardRouting/train/route/v1', profile: 'train' },
+  'metro': { url: '/forwardRouting/train/route/v1', profile: 'train' },
+  'bus':   { url: '/forwardRouting/bus/route/v1',   profile: 'driving' },
+  'ferry': { url: '/forwardRouting/ferry/route/v1', profile: 'ferry' },
+  'car':   { url: '/forwardRouting/car/route/v1',   profile: 'driving' },
+  'walk':  { url: '/forwardRouting/foot/route/v1',  profile: 'foot' },
+  'cycle': { url: '/forwardRouting/bike/route/v1',  profile: 'bike' }
+};
+
+/* --------------------------
+   Helpers
+--------------------------- */
+
+/* Country code (alpha-2) → emoji flag */
+function getFlagEmoji(cc) {
+  if (!cc || cc.length !== 2) return '🏳️';
+  const A = 0x1F1E6, a = 'A'.charCodeAt(0);
+  return String.fromCodePoint(A + (cc[0].toUpperCase().charCodeAt(0) - a)) +
+         String.fromCodePoint(A + (cc[1].toUpperCase().charCodeAt(0) - a));
+}
+
+/* Create a Bootstrap input group with a spinner bound to a text input */
+function wrapWithSpinner($input) {
+  const group = $(`
+    <div class="input-group">
+      <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+    </div>
+  `);
+  const spinner = $(`<span class="input-group-text bg-transparent border-start-0">
+      <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+    </span>`);
+  $input.addClass('form-control border-start-0').appendTo(group);
+  spinner.appendTo(group);
+  $input.data('spinnerEl', spinner.find('.spinner-border'));
+  return group;
+}
+
+/* Format seconds to "Hh Mm" or "Mm" */
+function formatDuration(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+/* Haversine great-circle distance (meters) */
+function greatCircle(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+
+/* Build a URL with ?q=... or &q=... correctly */
+function makeSearchUrl(base, term) {
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}q=${encodeURIComponent(term)}`;
+}
+
+/* Color resolver */
+function segColor(seg) {
+  return (vehicleTypes[seg.type]?.color) || 'var(--train)';
+}
+
+/* Numbered round marker used for ALL segments */
+function roundNumberMarker(color, number) {
+  const safeNum = (typeof number === 'number' && isFinite(number)) ? number : '';
+  return L.divIcon({
+    html: `<div style="
+        width:22px;height:22px;border-radius:50%;
+        background:${color};
+        color:#fff;font-weight:700;font-size:12px;line-height:22px;text-align:center;
+        border:2px solid #fff;">
+        ${safeNum}
+      </div>`,
+    iconSize: [22,22],
+    className: 'route-marker'
+  });
+}
+
+/* Debounced + abortable AJAX source for jQuery UI autocomplete */
+function makeAbortableSource(buildUrl) {
+  return function(request, response) {
+    const $inp = $(this.element);
+    const spinner = $inp.data('spinnerEl');
+    const minLen = 2;
+    if (!request.term || request.term.length < minLen) return response([]);
+
+    clearTimeout($inp.data('debounceTimer'));
+    const timer = setTimeout(() => {
+      const last = $inp.data('lastXhr');
+      if (last && last.readyState !== 4) try { last.abort(); } catch(e){}
+
+      const token = Date.now() + Math.random();
+      $inp.data('token', token);
+
+      spinner?.removeClass('d-none');
+      const url = buildUrl(request.term);
+
+      const xhr = $.ajax({ url, dataType: 'json' })
+        .done(function(data) {
+          if ($inp.data('token') !== token) return; // stale
+          let items = [];
+          if (url.startsWith('/airportAutocomplete/')) {
+            items = Array.isArray(data) ? data.map(a => {
+              const cc = (a.iso_country || '').toString().slice(0,2);
+              const label = `${a.name} (${a.iata || a.icao || '—'})`;
+              globalStationDict[label] = {
+                coords: [a.latitude, a.longitude],
+                name: label,
+                data: a,
+                country_code: cc
+              };
+              return {
+                label, value: label, country_code: cc,
+                subtitle: a.municipality || a.city || '',
+                lat: a.latitude, lon: a.longitude
+              };
+            }) : [];
+          } else if (data && data.type === 'FeatureCollection' && Array.isArray(data.features)) {
+            items = data.features.map(f => {
+              const coords = f.geometry.coordinates;
+              const p = f.properties || {};
+              const label = p.label || p.name || p.display_name || (p.name && p.code ? `${p.name} (${p.code})` : 'Station');
+              const cc = (p.countrycode || '').toString().slice(0,2);
+              globalStationDict[label] = { coords: [coords[1], coords[0]], name: label, data: f, country_code: cc };
+              return { label, value: label, country_code: cc, subtitle: p.city || p.state || '', lat: coords[1], lon: coords[0] };
+            });
+          } else if (Array.isArray(data)) {
+            items = data.map(item => {
+              const lat = item.lat || item.latitude;
+              const lon = item.lng || item.lon || item.longitude;
+              const label = item.label || item.name;
+              const cc = (item.country_code || item.countrycode || '').toString().slice(0,2);
+              globalStationDict[label] = { coords: [lat, lon], name: label, data: item, country_code: cc };
+              return { label, value: label, country_code: cc, subtitle: item.municipality || item.city || '', lat, lon };
+            });
+          }
+          response(items);
+        })
+        .fail(() => { if ($inp.data('token') === token) response([]); })
+        .always(() => spinner?.addClass('d-none'));
+
+      $inp.data('lastXhr', xhr);
+    }, 250);
+    $inp.data('debounceTimer', timer);
+  };
+}
+
+/* Update compact header text when collapsed */
+function updateSegmentSummary(segmentId) {
+  const seg = segments[segmentId];
+  if (!seg) return;
+  const idx = seg.displayIndex ?? (segmentId + 1);
+  const meta = vehicleTypes[seg.type] || { name: 'Segment', color: 'var(--train)' };
+  const from = seg.origin?.name || '—';
+  const to = seg.destination?.name || '—';
+  const color = segColor(seg);
+
+  const $card = $(`#segment-${segmentId}`);
+  $card.find('.seg-summary-chip').css('background', color).text(idx);
+  $card.find('.seg-summary-text').html(`<strong>${meta.name}</strong> — ${from} <i class="fa-solid fa-arrow-right-long mx-1"></i> ${to}`);
+}
+
+/* Renumber visual order and store displayIndex */
+function renumberSegments() {
+  $('#segments-container .card').each(function(i){
+    $(this).find('.seg-num').text(i+1);
+    const segId = parseInt(this.id.split('-')[1], 10);
+    if (segments[segId]) segments[segId].displayIndex = i+1;
+  });
+}
+
+/* --------------------------
+   Map Init
+--------------------------- */
+function initMap() {
+  map = L.map('carbonMap', { zoomControl: true });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    updateWhenZooming: false,
+    updateWhenIdle: true
+  }).addTo(map);
+  L.control.scale({ imperial: false }).addTo(map);
+  map.setView([51.505, -0.09], 5);
+
+  const ro = new ResizeObserver(() => { map && map.invalidateSize(); });
+  ro.observe(document.getElementById('carbonMap'));
+  window.addEventListener('resize', () => { map && map.invalidateSize(); });
+  map.whenReady(() => setTimeout(() => map.invalidateSize(), 100));
+}
+
+/* --------------------------
+   Segment UI
+--------------------------- */
+function addSegment() {
+  const id = segmentCounter++;
+  segments[id] = {
+    id, type: null,
+    origin: null, destination: null, waypoints: [],
+    route: null, distance: 0, duration: 0, routeDetails: null,
+    overlays: null, isRouting: false, validated: false, displayIndex: null
+  };
+
+  // Card (with collapsible body and summary header)
+  const $card = $(`
+    <div class="card border-0 shadow-sm" id="segment-${id}">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div class="d-flex align-items-center">
+            <span class="badge bg-primary-subtle text-primary-emphasis me-2">Segment <span class="seg-num">${id + 1}</span></span>
+            <div class="d-none align-items-center gap-2 seg-collapsed">
+              <span class="seg-chip seg-summary-chip" style="background: var(--train)"></span>
+              <span class="seg-summary-text small text-muted"></span>
+            </div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-sm btn-outline-secondary d-none" title="Edit" onclick="expandSegment(${id})">
+              <i class="fa-solid fa-pen-to-square"></i>
+            </button>
+            ${id > 0 ? `<button class="btn btn-sm btn-outline-danger" title="Remove segment" onclick="removeSegment(${id})">
+              <i class="fa-solid fa-trash"></i>
+            </button>` : ''}
+          </div>
+        </div>
+
+        <!-- Collapsible content -->
+        <div class="seg-body">
+          <!-- Transport pills -->
+          <div class="row g-2 mb-3" id="transport-${id}">
+            ${Object.entries(vehicleTypes).map(([key, meta]) => `
+              <div class="col-4">
+                <div class="btn btn-outline-secondary w-100 transport-pill" data-seg="${id}" data-type="${key}">
+                  <i class="fa-solid ${meta.icon} me-1"></i>${meta.name}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+
+          <!-- Origin -->
+          <div class="mb-3">
+            <label class="form-label mb-1">Origin</label>
+            <div id="origin-wrapper-${id}"></div>
+            <div class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" id="origin-manual-${id}" onchange="toggleManual(${id}, 'origin')">
+              <label class="form-check-label" for="origin-manual-${id}">Manual coordinates</label>
+            </div>
+            <div class="row g-2 mt-1 d-none" id="origin-manual-inputs-${id}">
+              <div class="col-12 col-md-6">
+                <input type="text" class="form-control" id="origin-name-${id}" placeholder="Location name">
+              </div>
+              <div class="col-6 col-md-3">
+                <input type="number" step="0.000001" class="form-control" id="origin-lat-${id}" placeholder="Lat">
+              </div>
+              <div class="col-6 col-md-3">
+                <input type="number" step="0.000001" class="form-control" id="origin-lng-${id}" placeholder="Lng">
+              </div>
+            </div>
+          </div>
+
+          <!-- Destination -->
+          <div class="mb-3">
+            <label class="form-label mb-1">Destination</label>
+            <div id="destination-wrapper-${id}"></div>
+            <div class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" id="destination-manual-${id}" onchange="toggleManual(${id}, 'destination')">
+              <label class="form-check-label" for="destination-manual-${id}">Manual coordinates</label>
+            </div>
+            <div class="row g-2 mt-1 d-none" id="destination-manual-inputs-${id}">
+              <div class="col-12 col-md-6">
+                <input type="text" class="form-control" id="destination-name-${id}" placeholder="Location name">
+              </div>
+              <div class="col-6 col-md-3">
+                <input type="number" step="0.000001" class="form-control" id="destination-lat-${id}" placeholder="Lat">
+              </div>
+              <div class="col-6 col-md-3">
+                <input type="number" step="0.000001" class="form-control" id="destination-lng-${id}" placeholder="Lng">
+              </div>
+            </div>
+          </div>
+
+          <!-- Waypoints -->
+          <div class="d-grid mb-2">
+            <button class="btn btn-secondary d-none" id="waypoint-btn-${id}" onclick="addWaypoint(${id})">
+              <i class="fa-solid fa-location-dot me-1"></i>Add Waypoint
+            </button>
+          </div>
+          <div id="waypoints-${id}"></div>
+      
+          <!-- Distance/Duration info -->
+          <div class="alert alert-info d-none py-2 px-3" id="distance-${id}">
+            <i class="fa-solid fa-route me-1"></i>
+            <span class="distance-text"></span>
+          </div>
+
+          <!-- Validate / Collapse -->
+          <div class="d-flex justify-content-end mt-2">
+            <button class="btn btn-success" onclick="validateAndCollapse(${id})">
+              <i class="fa-solid fa-check me-1"></i>Validate segment
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `);
+
+  // Search inputs (abortable sources)
+  const $originInput = $(`<input type="text" id="origin-${id}" class="form-control" placeholder="Search for origin...">`);
+  const $originGroup = wrapWithSpinner($originInput);
+  $card.find(`#origin-wrapper-${id}`).append($originGroup);
+
+  const $destInput = $(`<input type="text" id="destination-${id}" class="form-control" placeholder="Search for destination...">`);
+  const $destGroup = wrapWithSpinner($destInput);
+  $card.find(`#destination-wrapper-${id}`).append($destGroup);
+
+  $('#segments-container').append($card);
+  renumberSegments();
+
+  // Transport selection
+  $card.on('click', '.transport-pill', function () {
+    $card.find('.transport-pill').removeClass('active').addClass('btn-outline-secondary').removeClass('btn-secondary');
+    $(this).addClass('active').removeClass('btn-outline-secondary');
+    selectTripType(id, $(this).data('type'));
+  });
+
+  initializeAutocomplete(id);
+
+  // Default type on first segment
+  if (id === 0) {
+    $card.find(`.transport-pill[data-type="train"]`).trigger('click');
+  }
+
+  // Update header summary on changes
+  $card.on('change', 'input,select', () => updateSegmentSummary(id));
+}
+
+/* Expand a collapsed segment for editing */
+function expandSegment(segmentId) {
+  const $card = $(`#segment-${segmentId}`);
+  $card.find('.seg-collapsed').addClass('d-none');
+  $card.find('.seg-body').slideDown(150);
+  $card.find('[title="Edit"]').addClass('d-none');
+  segments[segmentId].validated = false;
+}
+
+/* Validate + collapse a segment */
+function validateAndCollapse(segmentId) {
+  const seg = segments[segmentId];
+  if (!seg.type || !seg.origin || !seg.destination) {
+    bootstrapToast('Please choose a transport type, origin and destination before validating.', 'warning');
+    return;
+  }
+  seg.validated = true;
+  updateSegmentSummary(segmentId);
+  const $card = $(`#segment-${segmentId}`);
+  $card.find('.seg-collapsed').removeClass('d-none').css('display','flex');
+  $card.find('.seg-body').slideUp(150);
+  $card.find('[title="Edit"]').removeClass('d-none');
+}
+
+/* Manual toggle (origin/destination) */
+function toggleManual(segmentId, field) {
+  const $toggle = $(`#${field}-manual-${segmentId}`);
+  const $manual = $(`#${field}-manual-inputs-${segmentId}`);
+  const $text = $(`#${field}-${segmentId}`);
+  if ($toggle.is(':checked')) {
+    $manual.removeClass('d-none');
+    $text.prop('disabled', true);
+    $(`#${field}-name-${segmentId}, #${field}-lat-${segmentId}, #${field}-lng-${segmentId}`).off('change').on('change', function () {
+      const name = $(`#${field}-name-${segmentId}`).val();
+      const lat = parseFloat($(`#${field}-lat-${segmentId}`).val());
+      const lng = parseFloat($(`#${field}-lng-${segmentId}`).val());
+      if (name && !isNaN(lat) && !isNaN(lng)) {
+        segments[segmentId][field] = { coords: [lat, lng], name, manual: true };
+        $(`#${field}-${segmentId}`).val(name);
+        updateSegmentSummary(segmentId);
+        checkAndRoute(segmentId);
+      }
+    });
+  } else {
+    $manual.addClass('d-none');
+    $text.prop('disabled', false);
+  }
+}
+
+/* --------------------------
+   Autocomplete Setup (abortable)
+--------------------------- */
+function safeDestroyAutocomplete($el) {
+  const uiInst = $el.data('ui-autocomplete') || $el.data('autocomplete');
+  if (uiInst) {
+    try { $el.autocomplete('destroy'); } catch(e) {}
+  }
+}
+
+function initializeAutocomplete(segmentId) {
+  const $origin = $(`#origin-${segmentId}`);
+  const $dest   = $(`#destination-${segmentId}`);
+
+  segments[segmentId].setupAutocomplete = function (type) {
+    const isAirport = (type === 'air');
+    const baseUrl   = stationURLs[type];
+
+    function onSelect(field, ui) {
+      segments[segmentId][field] = {
+        coords: [ui.item.lat ?? globalStationDict[ui.item.value]?.coords[0],
+                 ui.item.lon ?? globalStationDict[ui.item.value]?.coords[1]],
+        name: ui.item.value,
+        country_code: ui.item.country_code || globalStationDict[ui.item.value]?.country_code || null,
+        data: globalStationDict[ui.item.value]?.data || null
+      };
+      updateSegmentSummary(segmentId);
+      checkAndRoute(segmentId);
+    }
+
+    // Origin
+    safeDestroyAutocomplete($origin);
+    $origin.autocomplete({
+      minLength: 2,
+      delay: 250,
+      autoFocus: false,
+      source: makeAbortableSource(term => isAirport ? (baseUrl + encodeURIComponent(term))
+                                                    : makeSearchUrl(baseUrl, term)),
+      select: function (e, ui) { onSelect('origin', ui); }
+    });
+    const oInst = $origin.data('ui-autocomplete');
+    if (oInst) {
+      oInst._renderItem = function (ul, item) {
+        const flag = getFlagEmoji(item.country_code || '');
+        const $row = $(`
+          <div class="ac-item">
+            <div class="ac-flag">${flag}</div>
+            <div class="ac-text">
+              <div>${item.label}</div>
+              ${item.subtitle ? `<div class="ac-sub">${item.subtitle}</div>` : ''}
+            </div>
+          </div>
+        `);
+        return $("<li>").append($row).appendTo(ul);
+      };
+    }
+
+    // Destination
+    safeDestroyAutocomplete($dest);
+    $dest.autocomplete({
+      minLength: 2,
+      delay: 250,
+      autoFocus: false,
+      source: makeAbortableSource(term => isAirport ? (baseUrl + encodeURIComponent(term))
+                                                    : makeSearchUrl(baseUrl, term)),
+      select: function (e, ui) { onSelect('destination', ui); }
+    });
+    const dInst = $dest.data('ui-autocomplete');
+    if (dInst) {
+      dInst._renderItem = function (ul, item) {
+        const flag = getFlagEmoji(item.country_code || '');
+        const $row = $(`
+          <div class="ac-item">
+            <div class="ac-flag">${flag}</div>
+            <div class="ac-text">
+              <div>${item.label}</div>
+              ${item.subtitle ? `<div class="ac-sub">${item.subtitle}</div>` : ''}
+            </div>
+          </div>
+        `);
+        return $("<li>").append($row).appendTo(ul);
+      };
+    }
+  };
+}
+
+/* Transport selection -> set up autocomplete and route mode */
+function selectTripType(segmentId, type) {
+  const seg = segments[segmentId];
+  seg.type = type;
+
+  if (type !== 'air') {
+    $(`#waypoint-btn-${segmentId}`).removeClass('d-none');
+  } else {
+    $(`#waypoint-btn-${segmentId}`).addClass('d-none');
+  }
+
+  if (seg.setupAutocomplete) seg.setupAutocomplete(type);
+  updateSegmentSummary(segmentId);
+  checkAndRoute(segmentId);
+}
+
+/* Add waypoint within a segment (abortable source) */
+function addWaypoint(segmentId) {
+  const idx = segments[segmentId].waypoints.length;
+  const $grp = $(`
+    <div class="mb-2" id="waypoint-${segmentId}-${idx}">
+      <label class="form-label">Waypoint ${idx + 1}</label>
+      <div id="waypoint-wrapper-${segmentId}-${idx}"></div>
+      <button class="btn btn-sm btn-outline-danger mt-1" onclick="removeWaypoint(${segmentId}, ${idx})">
+        <i class="fa-solid fa-xmark me-1"></i>Remove
+      </button>
+    </div>
+  `);
+  $(`#waypoints-${segmentId}`).append($grp);
+
+  const $wpInput = $(`<input type="text" id="waypoint-input-${segmentId}-${idx}" class="form-control" placeholder="Search for waypoint...">`);
+  const $wpGroup = wrapWithSpinner($wpInput);
+  $grp.find(`#waypoint-wrapper-${segmentId}-${idx}`).append($wpGroup);
+
+  const type = segments[segmentId].type;
+  const isAirport = (type === 'air');
+  const baseUrl = stationURLs[type];
+
+  $wpInput.autocomplete({
+    minLength: 2,
+    delay: 250,
+    autoFocus: false,
+    source: makeAbortableSource(term => isAirport ? (baseUrl + encodeURIComponent(term))
+                                                  : makeSearchUrl(baseUrl, term)),
+    select: function (e, ui) {
+      segments[segmentId].waypoints[idx] = { coords: [ui.item.lat ?? ui.item.coords?.[0], ui.item.lon ?? ui.item.coords?.[1]], name: ui.item.value };
+      updateSegmentSummary(segmentId);
+      checkAndRoute(segmentId);
+    }
+  }).data('ui-autocomplete')._renderItem = function (ul, item) {
+    const flag = getFlagEmoji(item.country_code || '');
+    const $row = $(`
+      <div class="ac-item">
+        <div class="ac-flag">${flag}</div>
+        <div class="ac-text">
+          <div>${item.label}</div>
+          ${item.subtitle ? `<div class="ac-sub">${item.subtitle}</div>` : ''}
+        </div>
+      </div>
+    `);
+    return $("<li>").append($row).appendTo(ul);
+  };
+}
+
+/* Remove a waypoint */
+function removeWaypoint(segmentId, waypointId) {
+  $(`#waypoint-${segmentId}-${waypointId}`).remove();
+  segments[segmentId].waypoints.splice(waypointId, 1);
+  checkAndRoute(segmentId);
+}
+
+/* Remove a segment */
+function removeSegment(segmentId) {
+  if (routeControls[segmentId]) {
+    map.removeControl(routeControls[segmentId]);
+    routeControls[segmentId] = null;
+  }
+  const seg = segments[segmentId];
+  if (seg?.overlays) {
+    if (seg.overlays.polyline) try { map.removeLayer(seg.overlays.polyline); } catch(e){}
+    if (Array.isArray(seg.overlays.markers)) seg.overlays.markers.forEach(m => { try { map.removeLayer(m); } catch(e){} });
+  }
+  $(`#segment-${segmentId}`).remove();
+  delete segments[segmentId];
+  renumberSegments();
+}
+
+/* --------------------------
+   Routing (capture details)
+--------------------------- */
+(function() {
+  const origOpen = XMLHttpRequest.prototype.open;
+  const origSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function(method, url) {
+    this._reqUrl = url;
+    return origOpen.apply(this, arguments);
+  };
+  XMLHttpRequest.prototype.send = function() {
+    const self = this;
+    const orig = this.onreadystatechange;
+    this.onreadystatechange = function() {
+      if (self.readyState === 4 && self.status === 200) {
+        if (self._reqUrl && self._reqUrl.includes('/route/')) {
+          try {
+            const json = JSON.parse(self.responseText);
+            if (json.routes?.[0]?.details) {
+              const segMatch = /[?&]x-segid=(\d+)/.exec(self._reqUrl);
+              const segId = segMatch ? parseInt(segMatch[1], 10) : null;
+              if (segId != null && segments[segId]) {
+                segments[segId].routeDetails = json.routes[0].details;
+              } else {
+                segments.forEach(s => { if (s && s.isRouting) s.routeDetails = json.routes[0].details; });
+              }
+            }
+          } catch (e) {}
+        }
+      }
+      if (orig) return orig.apply(this, arguments);
+    };
+    return origSend.apply(this, arguments);
+  };
+})();
+
+/* Build route when type+origin+destination are known */
+function checkAndRoute(segmentId) {
+  const seg = segments[segmentId];
+  if (!seg?.type || !seg.origin || !seg.destination) return;
+
+  seg.isRouting = true;
+
+  if (routeControls[segmentId]) {
+    map.removeControl(routeControls[segmentId]);
+    routeControls[segmentId] = null;
+  }
+  if (seg.overlays) {
+    if (seg.overlays.polyline) try { map.removeLayer(seg.overlays.polyline); } catch(e){}
+    if (Array.isArray(seg.overlays.markers)) seg.overlays.markers.forEach(m => { try { map.removeLayer(m); } catch(e){} });
+    seg.overlays = null;
+  }
+
+  const waypoints = [
+    L.latLng(seg.origin.coords[0], seg.origin.coords[1]),
+    ...seg.waypoints.map(wp => L.latLng(wp.coords[0], wp.coords[1])),
+    L.latLng(seg.destination.coords[0], seg.destination.coords[1])
+  ];
+
+  const color = segColor(seg);
+  const number = seg.displayIndex ?? (seg.id + 1);
+
+  // Flights: straight line + numbered round markers
+  if (seg.type === 'air') {
+    const poly = L.polyline(waypoints, { color, weight: 3, opacity: .95, dashArray: '10,7' }).addTo(map);
+
+    const markers = [];
+    markers.push(L.marker(waypoints[0], { icon: roundNumberMarker(color, number) })
+                 .addTo(map).bindPopup(`Origin: ${seg.origin.name}`));
+    markers.push(L.marker(waypoints[waypoints.length - 1], { icon: roundNumberMarker(color, number) })
+                 .addTo(map).bindPopup(`Destination: ${seg.destination.name}`));
+
+    const d = greatCircle(seg.origin.coords[0], seg.origin.coords[1],
+                          seg.destination.coords[0], seg.destination.coords[1]);
+
+    seg.distance = d;
+    seg.duration = 0;
+    seg.route = waypoints.map(wp => ({lat: wp.lat, lng: wp.lng}));
+    seg.overlays = { polyline: poly, markers };
+
+    const $alert = $(`#distance-${segmentId}`);
+    $alert.find('.distance-text').html(`<strong>Distance:</strong> ${(d/1000).toFixed(2)} km (Great Circle)`);
+    $alert.removeClass('d-none');
+
+    map.fitBounds(poly.getBounds(), { padding: [20,20] });
+    seg.isRouting = false;
+    return;
+  }
+
+  // Ground transports via OSRM-compatible backends
+  const rc = routingConfig[seg.type] || routingConfig['train'];
+  const router = L.Routing.osrmv1({
+    serviceUrl: rc.url,
+    profile: rc.profile,
+    urlParameters: { 'x-segid': String(segmentId) }
+  });
+
+  const ctrl = L.Routing.control({
+    waypoints,
+    router,
+    routeWhileDragging: false,
+    addWaypoints: false,
+    show: false,
+    createMarker: function(i, wp) {
+      return L.marker(wp.latLng, { icon: roundNumberMarker(color, number) });
+    },
+    lineOptions: {
+      styles: [{ color, weight: 4, opacity: .95 }]
+    }
+  })
+  .on('routesfound', function(e) {
+    const r = e.routes[0];
+    seg.distance = r.summary.totalDistance;
+    seg.duration = r.summary.totalTime;
+    seg.route = r.coordinates;
+
+    const $alert = $(`#distance-${segmentId}`);
+    $alert.find('.distance-text').html(
+      `<strong>Distance:</strong> ${(seg.distance/1000).toFixed(2)} km &nbsp;|&nbsp; <strong>Duration:</strong> ${formatDuration(seg.duration)}`
+    );
+    $alert.removeClass('d-none');
+
+    try {
+      const b = L.latLngBounds(r.coordinates);
+      map.fitBounds(b, { padding: [20,20] });
+    } catch(e){}
+
+    seg.isRouting = false;
+  })
+  .on('routingerror', function() {
+    bootstrapToast('Routing failed for this segment. Please adjust points or try another transport.', 'danger');
+    seg.isRouting = false;
+  })
+  .addTo(map);
+
+  routeControls[segmentId] = ctrl;
+}
+
+/* --------------------------
+   Carbon Calculation
+--------------------------- */
+async function calculateCarbon() {
+  const valid = segments.filter(s => s && s.route && s.distance > 0);
+  if (!valid.length) {
+    bootstrapToast('Please add at least one complete trip segment with origin and destination.', 'warning');
+    return;
+  }
+
+  $('#loadingOverlay').addClass('show');
+
+  try {
+    let totalCarbon = 0, totalDistance = 0, totalDuration = 0;
+    const details = [];
+
+    for (const seg of valid) {
+      let countries = {};
+      if (['train','bus','metro','tram'].includes(seg.type) && seg.routeDetails?.countries) {
+        countries = seg.routeDetails.countries;
+      }
+
+      const trip = {
+        type: seg.type,
+        trip_length: seg.distance,
+        estimated_trip_duration: seg.duration,
+        countries,
+        start_datetime: new Date().toISOString().split('T')[0],
+        details: seg.routeDetails || {}
+      };
+
+      const path = seg.route.map(c => ({lat: c.lat, lng: c.lng}));
+
+      let carbonKg = 0;
+      try {
+        const resp = await $.ajax({
+          url: '/api/calculate-carbon',
+          method: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify({ trip, path, detect_countries: true })
+        });
+        const val = resp?.carbon;
+        carbonKg = (typeof val === 'number' && isFinite(val)) ? val : 0;
+      } catch (e) {
+        carbonKg = 0;
+      }
+
+      details.push({
+        type: seg.type,
+        origin: seg.origin?.name || '—',
+        destination: seg.destination?.name || '—',
+        distance: seg.distance,
+        carbon: carbonKg
+      });
+
+      totalCarbon += carbonKg;
+      totalDistance += seg.distance;
+      totalDuration += seg.duration;
+    }
+
+    displayResults(totalDistance, totalDuration, totalCarbon, details);
+
+  } finally {
+    $('#loadingOverlay').removeClass('show');
+  }
+}
+
+/* Render results (totals + per-segment breakdown) */
+function displayResults(totalDistance, totalDuration, totalCarbon, list) {
+  $('#total-distance').text(`${(totalDistance/1000).toFixed(2)} km`);
+  $('#total-duration').text(formatDuration(totalDuration));
+  $('#total-carbon').text(`${totalCarbon.toFixed(2)} kg CO₂e`);
+
+  const $wrap = $('<div class="card mt-2"><div class="card-body p-2"><div class="list-group list-group-flush"></div></div></div>');
+  const $ul = $wrap.find('.list-group');
+
+  list.forEach((item, idx) => {
+    const meta = vehicleTypes[item.type] || {name: item.type, icon: 'fa-circle', color: '#6c757d'};
+    const number = idx + 1;
+    const $row = $(`
+      <div class="list-group-item d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center">
+          <span class="seg-chip me-2" style="background:${meta.color}">${number}</span>
+          <i class="fa-solid ${meta.icon} me-2"></i>
+          <div>
+            <div><strong>${meta.name}</strong> — ${item.origin} <i class="fa-solid fa-arrow-right-long mx-1"></i> ${item.destination}</div>
+            <small class="text-muted">${(item.distance/1000).toFixed(2)} km</small>
+          </div>
+        </div>
+        <span class="fw-semibold">${(item.carbon || 0).toFixed(2)} kg CO₂e</span>
+      </div>
+    `);
+    $ul.append($row);
+  });
+
+  const ctx = $(`
+    <div class="card mt-3">
+      <div class="card-body">
+        <h6 class="card-title mb-2"><i class="fa-solid fa-scale-balanced me-2"></i>Context</h6>
+        <p class="mb-2">This trip produces <strong>${totalCarbon.toFixed(2)} kg CO₂e</strong>.</p>
+        <ul class="mb-0 small text-muted">
+          <li>≈ ${(totalCarbon / 2.4).toFixed(0)} days of average personal emissions</li>
+          <li>Would require ≈ ${(totalCarbon / 21).toFixed(0)} trees to offset over a year</li>
+          <li>${totalCarbon < 50 ? '✅ Low impact trip' : totalCarbon < 200 ? '⚠️ Moderate impact' : '⚠️ High impact — consider offsetting'}</li>
+        </ul>
+      </div>
+    </div>
+  `);
+
+  $('#segment-results').empty().append($wrap, ctx);
+  $('#results').show()[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/* Bootstrap toast helper */
+function bootstrapToast(message, type='info') {
+  const id = 'toast-' + Math.random().toString(36).slice(2);
+  const $toast = $(`
+    <div id="${id}" class="toast align-items-center text-bg-${type} border-0 position-fixed bottom-0 end-0 m-3" role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="d-flex">
+        <div class="toast-body">${message}</div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+    </div>
+  `);
+  $('body').append($toast);
+  try {
+    const toast = new bootstrap.Toast($toast[0], { delay: 3000 });
+    toast.show();
+    $toast.on('hidden.bs.toast', () => $toast.remove());
+  } catch(e) {
+    setTimeout(() => $toast.remove(), 3000);
+  }
+}
+
+/* --------------------------
+   Init
+--------------------------- */
+$(function() {
+  initMap();
+  addSegment(); // initial segment
+});
+</script>
+
+{% endblock %}
