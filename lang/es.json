@@ -610,5 +610,9 @@
     "smart_search_examples_title": "Ejemplos",
     "smart_search_example_spaces_desc": "Usa comillas dobles cuando necesites incluir espacios en la búsqueda",
     "smart_search_example_exact_desc": "Las comillas simples aseguran una coincidencia exacta",
-    "smart_search_example_mixed_desc": "Puedes combinar diferentes modos de búsqueda, el ejemplo anterior busca todos los viajes donde la estación de salida contiene \"Oslo Central\", el 15 de enero de 2024, con \"express\" en cualquier campo."
+    "smart_search_example_mixed_desc": "Puedes combinar diferentes modos de búsqueda, el ejemplo anterior busca todos los viajes donde la estación de salida contiene \"Oslo Central\", el 15 de enero de 2024, con \"express\" en cualquier campo.",
+    "auto": "Auto",
+    "electric": "Eléctrico",
+    "thermic": "Térmico",
+    "powerType": "Tipo de potencia"
 }

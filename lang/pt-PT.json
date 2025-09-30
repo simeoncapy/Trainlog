@@ -610,5 +610,9 @@
     "smart_search_examples_title": "Exemplos",
     "smart_search_example_spaces_desc": "Use aspas duplas quando precisar incluir espaços na pesquisa.",
     "smart_search_example_exact_desc": "Aspas simples garantem correspondência exacta.",
-    "smart_search_example_mixed_desc": "Pode combinar diferentes modos de pesquisa, o exemplo acima pesquisa todas as viagens onde a estação de partida contém \"Oslo Central\", a 15 de janeiro de 2024, com \"express\" em qualquer campo."
+    "smart_search_example_mixed_desc": "Pode combinar diferentes modos de pesquisa, o exemplo acima pesquisa todas as viagens onde a estação de partida contém \"Oslo Central\", a 15 de janeiro de 2024, com \"express\" em qualquer campo.",
+    "auto": "Auto",
+    "electric": "Elétrico",
+    "thermic": "Térmico",
+    "powerType": "Tipo de potência"
 }

@@ -586,7 +586,7 @@ input[type=number] {
   text-align: center;
 }
 
-#form label {
+#form label:not(.btn) {
   color: #777;
   font-size: 0.9em;
   display: block;

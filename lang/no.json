@@ -610,5 +610,9 @@
     "smart_search_examples_title": "Eksempler",
     "smart_search_example_spaces_desc": "Bruk doble anførselstegn når du trenger å inkludere mellomrom i søket.",
     "smart_search_example_exact_desc": "Enkelte anførselstegn sikrer eksakt samsvar.",
-    "smart_search_example_mixed_desc": "Du kan kombinere forskjellige søkemoduser. Eksemplet ovenfor søker etter alle reiser hvor avgangsstasjonen inneholder \"Oslo Central\", den 15. januar 2024, med \"express\" i et hvilket som helst felt."
+    "smart_search_example_mixed_desc": "Du kan kombinere forskjellige søkemoduser. Eksemplet ovenfor søker etter alle reiser hvor avgangsstasjonen inneholder \"Oslo Central\", den 15. januar 2024, med \"express\" i et hvilket som helst felt.",
+    "auto": "Bil",
+    "electric": "Elektrisk",
+    "thermic": "Termisk",
+    "powerType": "Krafttype"
 }

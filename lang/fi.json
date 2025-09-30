@@ -610,5 +610,9 @@
     "smart_search_examples_title": "Esimerkkejä",
     "smart_search_example_spaces_desc": "Käytä lainausmerkkejä, kun sinun täytyy sisällyttää välilyöntejä hakuun.",
     "smart_search_example_exact_desc": "Yksittäiset lainausmerkit varmistavat tarkan vastineen.",
-    "smart_search_example_mixed_desc": "Voit yhdistellä eri hakutapoja, yllä oleva esimerkki etsii kaikki matkat, joissa lähtöasema sisältää tekstin \"Oslo Central\", päivämäärällä 15. tammikuuta 2024, ja missä tahansa kentässä lukee \"express\"."
+    "smart_search_example_mixed_desc": "Voit yhdistellä eri hakutapoja, yllä oleva esimerkki etsii kaikki matkat, joissa lähtöasema sisältää tekstin \"Oslo Central\", päivämäärällä 15. tammikuuta 2024, ja missä tahansa kentässä lukee \"express\".",
+    "auto": "Auto",
+    "electric": "Sähköinen",
+    "thermic": "Terminen",
+    "powerType": "Teholaji"
 }

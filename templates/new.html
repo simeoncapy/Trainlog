@@ -93,6 +93,28 @@
         <label for="ticketSearchInput" id="ticketSearchInputLabel" class="form-label">{{select_ticket}}</label>
         <select id="ticketSearchInput" name="ticket_id" class="form-select">
         </select>
+        <!-- Train Power Type Toggle (only for trains) -->
+        {% if vehicle_type == 'train' %}
+        <div class="mb-3">
+          <label class="form-label">{{powerType}}</label>
+          <div class="btn-group w-100" role="group">
+            <input type="radio" class="btn-check" name="powerType" id="powerAuto" value="auto" checked autocomplete="off">
+            <label class="btn btn-outline-secondary" for="powerAuto">
+              <i class="fas fa-magic"></i> {{auto}}
+            </label>
+            
+            <input type="radio" class="btn-check" name="powerType" id="powerElectric" value="electric" autocomplete="off">
+            <label class="btn btn-outline-secondary" for="powerElectric">
+              <i class="fas fa-bolt"></i> {{electric}}
+            </label>
+            
+            <input type="radio" class="btn-check" name="powerType" id="powerThermic" value="thermic" autocomplete="off">
+            <label class="btn btn-outline-secondary" for="powerThermic">
+              <i class="fas fa-fire"></i> {{thermic}}
+            </label>
+          </div>
+        </div>
+        {% endif %}
        <!-- <br>
         <input type="text" id="tagSearchInput" placeholder="{{select_tag}}" class="form-control" autocomplete="off">
         <div id="tagList" class="d-flex flex-wrap"></div> -->

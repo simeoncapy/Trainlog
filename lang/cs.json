@@ -610,5 +610,9 @@
     "smart_search_examples_title": "Příklady",
     "smart_search_example_spaces_desc": "Použijte dvojité uvozovky, když potřebujete do vyhledávání zahrnout mezery.",
     "smart_search_example_exact_desc": "Jednoduché uvozovky zajišťují přesnou shodu.",
-    "smart_search_example_mixed_desc": "Můžete kombinovat různé způsoby vyhledávání, výše uvedený příklad hledá všechny cesty, kde stanice odjezdu obsahuje \"Oslo Central\", dne 15. ledna 2024, s \"express\" v jakémkoli poli."
+    "smart_search_example_mixed_desc": "Můžete kombinovat různé způsoby vyhledávání, výše uvedený příklad hledá všechny cesty, kde stanice odjezdu obsahuje \"Oslo Central\", dne 15. ledna 2024, s \"express\" v jakémkoli poli.",
+    "auto": "Auto",
+    "electric": "Elektrický",
+    "thermic": "Tepelný",
+    "powerType": "Typ napájení"
 }

@@ -610,5 +610,9 @@
     "smart_search_examples_title": "Exempel",
     "smart_search_example_spaces_desc": "Använd dubbla citattecken när du behöver inkludera mellanslag i sökningen",
     "smart_search_example_exact_desc": "Enkla citattecken säkerställer exakt matchning",
-    "smart_search_example_mixed_desc": "Du kan kombinera olika söklägen, exemplet ovan söker efter alla resor där avgångsstationen innehåller \"Oslo Central\", den 15 januari 2024, med \"express\" i valfritt fält."
+    "smart_search_example_mixed_desc": "Du kan kombinera olika söklägen, exemplet ovan söker efter alla resor där avgångsstationen innehåller \"Oslo Central\", den 15 januari 2024, med \"express\" i valfritt fält.",
+    "auto": "Bil",
+    "electric": "Elektrisk",
+    "thermic": "Termisk",
+    "powerType": "Krafttyp"
 }

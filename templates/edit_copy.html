@@ -458,6 +458,28 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{close}}"></button>
             </div>
             <div class="modal-body">
+                <!-- Train Power Type Toggle (only for trains) -->
+                {% if tripType == 'train' %}
+                <div class="mb-3">
+                <label class="form-label">Power Type</label>
+                <div class="btn-group w-100" role="group">
+                    <input type="radio" class="btn-check" name="powerType" id="powerAuto" value="auto" checked autocomplete="off">
+                    <label class="btn btn-outline-secondary" for="powerAuto">
+                    <i class="fas fa-magic"></i> Auto
+                    </label>
+                    
+                    <input type="radio" class="btn-check" name="powerType" id="powerElectric" value="electric" autocomplete="off">
+                    <label class="btn btn-outline-secondary" for="powerElectric">
+                    <i class="fas fa-bolt"></i> Electric
+                    </label>
+                    
+                    <input type="radio" class="btn-check" name="powerType" id="powerThermic" value="thermic" autocomplete="off">
+                    <label class="btn btn-outline-secondary" for="powerThermic">
+                    <i class="fas fa-fire"></i> Thermic
+                    </label>
+                </div>
+                </div>
+                {% endif %}
                 <div id="map" class="mapRouting full-height" style="width: 100%; height: 400px;"></div>
                 <div id="sidebar">
                     <div id="sidebar-content"></div>
@@ -546,6 +568,8 @@
     $(document).ready(function () {
         $('#editPathButton').on('click', function () {
             updatedPath = currentRoute;
+            routeDetails["powerType"] = $('input[name="powerType"]:checked').val();
+            console.log(routeDetails)
             updatedRouteDetails = routeDetails;
             lastImportType = 'manual';
             $('#mapModal').modal('hide');

@@ -610,5 +610,9 @@
     "smart_search_examples_title": "Przykłady",
     "smart_search_example_spaces_desc": "Używaj cudzysłowów, gdy musisz uwzględnić odstępy w wyszukiwaniu",
     "smart_search_example_exact_desc": "Pojedyncze cudzysłowy zapewniają dokładne dopasowanie",
-    "smart_search_example_mixed_desc": "Możesz łączyć różne tryby wyszukiwania, powyższy przykład wyszukuje wszystkie podróże, gdzie stacja początkowa zawiera \"Oslo Central\", 15 stycznia 2024 roku, z \"express\" w dowolnym polu."
+    "smart_search_example_mixed_desc": "Możesz łączyć różne tryby wyszukiwania, powyższy przykład wyszukuje wszystkie podróże, gdzie stacja początkowa zawiera \"Oslo Central\", 15 stycznia 2024 roku, z \"express\" w dowolnym polu.",
+    "auto": "Auto",
+    "electric": "Elektryczny",
+    "thermic": "Termiczny",
+    "powerType": "Typ zasilania"
 }

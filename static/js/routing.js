@@ -384,6 +384,7 @@ function routing(map, showSidebar=true, type){
       newTrip["estimated_trip_duration"] = this._selectedRoute.summary.totalTime;
       
       if(routeDetails) {
+        routeDetails["powerType"] = newTrip["powerType"]
         newTrip["details"] = routeDetails;
       }
       

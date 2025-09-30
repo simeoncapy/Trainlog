@@ -610,5 +610,9 @@
     "smart_search_examples_title": "Primjeri",
     "smart_search_example_spaces_desc": "Koristite dvostruke navodnike kada trebate uključiti razmake u pretragu",
     "smart_search_example_exact_desc": "Jednostruki navodnici osiguravaju točno podudaranje",
-    "smart_search_example_mixed_desc": "Možete kombinirati različite načine pretrage, gornji primjer pretražuje sva putovanja gdje početna stanica sadrži \"Oslo Central\", 15. siječnja 2024., s \"express\" u bilo kojem polju."
+    "smart_search_example_mixed_desc": "Možete kombinirati različite načine pretrage, gornji primjer pretražuje sva putovanja gdje početna stanica sadrži \"Oslo Central\", 15. siječnja 2024., s \"express\" u bilo kojem polju.",
+    "auto": "Auto",
+    "electric": "Električni",
+    "thermic": "Termički",
+    "powerType": "Tip energije"
 }

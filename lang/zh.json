@@ -610,5 +610,9 @@
     "smart_search_examples_title": "示例",
     "smart_search_example_spaces_desc": "在搜索中需要包含空格时使用双引号",
     "smart_search_example_exact_desc": "单引号确保精确匹配",
-    "smart_search_example_mixed_desc": "您可以组合不同的搜索模式，上面的例子搜索所有出发站包含“Oslo Central”的行程，在2024年1月15日，任何字段包含“express”。"
+    "smart_search_example_mixed_desc": "您可以组合不同的搜索模式，上面的例子搜索所有出发站包含“Oslo Central”的行程，在2024年1月15日，任何字段包含“express”。",
+    "auto": "自动",
+    "electric": "电动",
+    "thermic": "热能",
+    "powerType": "动力类型"
 }

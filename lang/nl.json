@@ -610,5 +610,9 @@
     "smart_search_examples_title": "Voorbeelden",
     "smart_search_example_spaces_desc": "Gebruik aanhalingstekens als u spaties in de zoekopdracht moet opnemen.",
     "smart_search_example_exact_desc": "Enkele aanhalingstekens zorgen voor exacte overeenstemming.",
-    "smart_search_example_mixed_desc": "U kunt verschillende zoekmodi combineren. Het bovenstaande voorbeeld zoekt naar alle reizen waarbij het vertrekstation \"Oslo Centraal\" bevat op 15 januari 2024, met \"express\" in elk veld."
+    "smart_search_example_mixed_desc": "U kunt verschillende zoekmodi combineren. Het bovenstaande voorbeeld zoekt naar alle reizen waarbij het vertrekstation \"Oslo Centraal\" bevat op 15 januari 2024, met \"express\" in elk veld.",
+    "auto": "Auto",
+    "electric": "Elektrisch",
+    "thermic": "Thermisch",
+    "powerType": "Vermogenstype"
 }

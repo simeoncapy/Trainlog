@@ -610,5 +610,9 @@
     "smart_search_examples_title": "Bischpiel",
     "smart_search_example_spaces_desc": "Nutz doppeli Anfüerigszeiche, wänn d Lücke i d Suechi ärgänze muesch.",
     "smart_search_example_exact_desc": "Eifachi Anfüerigszeiche suerged für genaui Üeberschtimmig.",
-    "smart_search_example_mixed_desc": "Du chasch verschideni Suechmodi kombiniere, s Bischpiel do obe suecht-nach-allne Riese, woni d Abfahrtsstation \"Oslo Central\" enthält, am 15. Januar 2024 und \"express\" i jedem Feld staht."
+    "smart_search_example_mixed_desc": "Du chasch verschideni Suechmodi kombiniere, s Bischpiel do obe suecht-nach-allne Riese, woni d Abfahrtsstation \"Oslo Central\" enthält, am 15. Januar 2024 und \"express\" i jedem Feld staht.",
+    "auto": "Auto",
+    "electric": "Elektrisch",
+    "thermic": "Thermisch",
+    "powerType": "Leistungstyp"
 }

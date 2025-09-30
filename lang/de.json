@@ -610,5 +610,9 @@
     "smart_search_examples_title": "Beispiele",
     "smart_search_example_spaces_desc": "Verwenden Sie doppelte Anführungszeichen, wenn Sie Leerzeichen in die Suche einbeziehen müssen.",
     "smart_search_example_exact_desc": "Einfache Anführungszeichen gewährleisten genaue Übereinstimmungen.",
-    "smart_search_example_mixed_desc": "Sie können verschiedene Suchmodi kombinieren, das obige Beispiel sucht nach allen Reisen, bei denen die Abfahrtsstation \"Oslo Central\" enthält, am 15. Januar 2024, mit \"express\" in jedem Feld."
+    "smart_search_example_mixed_desc": "Sie können verschiedene Suchmodi kombinieren, das obige Beispiel sucht nach allen Reisen, bei denen die Abfahrtsstation \"Oslo Central\" enthält, am 15. Januar 2024, mit \"express\" in jedem Feld.",
+    "auto": "Auto",
+    "electric": "Elektrisch",
+    "thermic": "Thermisch",
+    "powerType": "Leistungsart"
 }

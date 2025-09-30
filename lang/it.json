@@ -610,5 +610,9 @@
     "smart_search_examples_title": "Esempi",
     "smart_search_example_spaces_desc": "Usa le virgolette doppie quando devi includere spazi nella ricerca.",
     "smart_search_example_exact_desc": "Le virgolette singole garantiscono una corrispondenza esatta.",
-    "smart_search_example_mixed_desc": "Puoi combinare diversi modi di ricerca, l'esempio sopra cerca tutti i viaggi in cui la stazione di partenza contiene \"Oslo Central\", il 15 gennaio 2024, con \"express\" in qualsiasi campo."
+    "smart_search_example_mixed_desc": "Puoi combinare diversi modi di ricerca, l'esempio sopra cerca tutti i viaggi in cui la stazione di partenza contiene \"Oslo Central\", il 15 gennaio 2024, con \"express\" in qualsiasi campo.",
+    "auto": "Auto",
+    "electric": "Elettrico",
+    "thermic": "Termico",
+    "powerType": "Tipo di alimentazione"
 }

@@ -610,5 +610,9 @@
     "smart_search_examples_title": "Példák",
     "smart_search_example_spaces_desc": "Használjon dupla idézőjeleket, ha szóközöket kell beépíteni a keresésbe.",
     "smart_search_example_exact_desc": "Az egyes idézőjelek pontos egyezést biztosítanak.",
-    "smart_search_example_mixed_desc": "Különböző keresési módokat kombinálhat, a fenti példa minden olyan utazást keres, ahol a kiinduló állomás tartalmazza az \"Oslo Central\"-t, 2024. január 15-én, bármely mezőben \"express\"."
+    "smart_search_example_mixed_desc": "Különböző keresési módokat kombinálhat, a fenti példa minden olyan utazást keres, ahol a kiinduló állomás tartalmazza az \"Oslo Central\"-t, 2024. január 15-én, bármely mezőben \"express\".",
+    "auto": "Autó",
+    "electric": "Elektromos",
+    "thermic": "Termikus",
+    "powerType": "Teljesítménytípus"
 }

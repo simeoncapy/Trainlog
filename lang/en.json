@@ -610,5 +610,9 @@
     "smart_search_examples_title": "Examples",
     "smart_search_example_spaces_desc": "Use double quotes when you need to include spaces in the search",
     "smart_search_example_exact_desc": "Single quotes ensure exact matching",
-    "smart_search_example_mixed_desc": "You can combine different search modes, the example above searches for all trips where the departure station contains \"Oslo Central\", on January 15, 2024, with \"express\" in any field"
+    "smart_search_example_mixed_desc": "You can combine different search modes, the example above searches for all trips where the departure station contains \"Oslo Central\", on January 15, 2024, with \"express\" in any field",
+    "auto": "Auto",
+    "electric": "Electric",
+    "thermic": "Thermic",
+    "powerType": "Power type"
 }
