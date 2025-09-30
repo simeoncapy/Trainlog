@@ -354,7 +354,7 @@ function getFlagEmojiListNew(countriesString){
       var countryData = countriesDict[countryCode];
       
       var title;
-      if (countriesList.length > 1 && !(countriesList.length == 2 && JSON.stringify(countriesDict[countriesList[0]]) == JSON.stringify(countriesDict[countriesList[1]]))) {
+      if (!(countriesList.length == 2 && JSON.stringify(countriesDict[countriesList[0]]) == JSON.stringify(countriesDict[countriesList[1]]))) {
         if (typeof countryData === 'number') {
           // Simple distance format: {"FR": 100}
           title = `${CountryName} - ${mToKm(countryData)}km`;

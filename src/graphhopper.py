@@ -1,51 +1,62 @@
 def convert_graphhopper_to_osrm(gh_response):
     """Convert GraphHopper response to OSRM format for compatibility"""
-    # Rest of your existing converter code...
     if not gh_response.get('paths'):
         return {"code": "NoRoute", "message": "No route found"}
    
     path = gh_response['paths'][0]
    
-    # Decode polyline to get actual coordinates
+    # Decode the main route polyline
     encoded_points = path.get('points', '')
-    if encoded_points:
-        # GraphHopper uses precision 5 by default
-        coordinates = decode_polyline(encoded_points, precision=5)
-       
-        # Create waypoints from first and last coordinates
-        waypoints = []
-        if len(coordinates) >= 2:
-            # Start point
+    
+    # Decode snapped waypoints (start and end points of the route)
+    waypoints = []
+    snapped_waypoints = path.get('snapped_waypoints', '')
+    
+    if snapped_waypoints:
+        # Decode the snapped waypoints polyline
+        snapped_coords = decode_polyline(snapped_waypoints, precision=5)
+        
+        # Create waypoints from snapped coordinates
+        for idx, coord in enumerate(snapped_coords):
             waypoints.append({
                 "name": "",
-                "location": [coordinates[0][1], coordinates[0][0]],  # [lng, lat]
+                "location": [coord[1], coord[0]],  # [lng, lat]
+                "distance": 0,
+                "hint": "",
+                "waypoint_index": idx
+            })
+    elif encoded_points:
+        # Fallback: use first and last coordinates from main route
+        coordinates = decode_polyline(encoded_points, precision=5)
+        if len(coordinates) >= 2:
+            waypoints.append({
+                "name": "",
+                "location": [coordinates[0][1], coordinates[0][0]],
                 "distance": 0,
                 "hint": "",
                 "waypoint_index": 0
             })
-            # End point
             waypoints.append({
                 "name": "",
-                "location": [coordinates[-1][1], coordinates[-1][0]],  # [lng, lat]
+                "location": [coordinates[-1][1], coordinates[-1][0]],
                 "distance": 0,
                 "hint": "",
                 "waypoint_index": 1
             })
     else:
-        # Fallback to bbox if no encoded points
+        # Last fallback: use bbox if nothing else available
         bbox = path.get('bbox', [])
-        waypoints = []
         if len(bbox) >= 4:
             waypoints.append({
                 "name": "",
-                "location": [bbox[0], bbox[1]],  # [lng, lat]
+                "location": [bbox[0], bbox[1]],
                 "distance": 0,
                 "hint": "",
                 "waypoint_index": 0
             })
             waypoints.append({
                 "name": "",
-                "location": [bbox[2], bbox[3]],  # [lng, lat]
+                "location": [bbox[2], bbox[3]],
                 "distance": 0,
                 "hint": "",
                 "waypoint_index": 1

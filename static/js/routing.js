@@ -388,6 +388,7 @@ function routing(map, showSidebar=true, type){
       }
       
       const waypoints = this._selectedRoute.waypoints;
+      console.log(this._selectedRoute)
 
       if(waypoints.length > 2) {
           const latLngs = waypoints.slice(1, -1).map(point => point.latLng);

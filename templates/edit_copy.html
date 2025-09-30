@@ -497,6 +497,7 @@
 
     var tripType = "{{tripType}}";
     var updatedPath = null;
+    var updatedRouteDetails = null;
 
     if (tripType == "air") {
         $("#mapModalButton").hide();
@@ -545,6 +546,7 @@
     $(document).ready(function () {
         $('#editPathButton').on('click', function () {
             updatedPath = currentRoute;
+            updatedRouteDetails = routeDetails;
             lastImportType = 'manual';
             $('#mapModal').modal('hide');
             updatePathButtonSuccess('{{editedPath}}');
@@ -1238,6 +1240,9 @@
 
         if (updatedPath != null) {
             formData["path"] = JSON.stringify(updatedPath);
+            if (updatedRouteDetails != null) {
+                newTrip["details"] = JSON.stringify(updatedRouteDetails);
+            }
             formData = {
                 ...formData,
                 ...newTrip

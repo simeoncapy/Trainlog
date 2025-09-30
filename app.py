@@ -4254,7 +4254,7 @@ def update_trip_values_from_form_data(trip_id, formData, update_created_ts=False
 
     if "estimated_trip_duration" in formData and "trip_length" in formData:
         countries = getCountriesFromPath(
-            [{"lat": coord[0], "lng": coord[1]} for coord in path], formData["type"]
+            [{"lat": coord[0], "lng": coord[1]} for coord in path], formData["type"], json.loads(formData.get("details"))
         )
         estimated_trip_duration = sanitize_param(formData["estimated_trip_duration"])
         trip_length = sanitize_param(formData["trip_length"])
