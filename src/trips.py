@@ -29,6 +29,7 @@ from src.utils import (
     processDates,
     sendOwnerEmail,
 )
+from src.carbon import calculate_carbon_footprint_for_trip
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,7 @@ class Trip:
         self.ticket_id = ticket_id
         self.is_project = is_project
         self.path = path
+        self.carbon = calculate_carbon_footprint_for_trip(vars(self), path)
 
     def keys(self):
         return tuple(vars(self).keys())
@@ -139,6 +141,7 @@ def create_trip(trip: Trip, pg_session=None):
                 "currency": trip.currency,
                 "ticket_id": trip.ticket_id,
                 "purchase_date": trip.purchasing_date,
+                "carbon": trip.carbon
             },
         )
 
@@ -313,6 +316,7 @@ def _duplicate_trip_in_sqlite(trip_id):
 def update_trip(trip_id: int, trip: Trip, formData=None, updateCreated=False):
     with pg_session() as pg:
         _update_trip_in_sqlite(formData, trip.last_modified, trip_id, updateCreated)
+        print(trip.carbon)
         pg.execute(
             update_trip_query(),
             {
@@ -342,6 +346,7 @@ def update_trip(trip_id: int, trip: Trip, formData=None, updateCreated=False):
                 "currency": trip.currency,
                 "ticket_id": trip.ticket_id if trip.ticket_id != "" else None,
                 "purchase_date": trip.purchasing_date,
+                "carbon": trip.carbon
             },
         )
 
