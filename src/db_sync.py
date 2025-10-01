@@ -66,7 +66,7 @@ def sync_trips_from_sqlite(pg_session=None):
 
         cursor.execute("SELECT * FROM trip ORDER BY uid")
         sqlite_trips = cursor.fetchall()
-    with managed_cursor(mainConn) as cursor:
+    with managed_cursor(pathConn) as cursor:
         cursor.execute("SELECT * FROM paths ORDER BY trip_id")
         sqlite_paths = cursor.fetchall()
         trip_paths = {row["trip_id"]: row["path"] for row in sqlite_paths}
