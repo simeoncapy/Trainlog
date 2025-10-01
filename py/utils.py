@@ -312,6 +312,21 @@ def getCountriesFromPath(path, type, routing_details=None):
             countries = {country: {"elec": 0, "nonelec": 0}}
         else:
             countries = {country: 0}
+    
+    # Assume that if over 95% is of one type, the rest is probably OSM not properly tagged. 
+    if use_electrification:
+        for country in countries:
+            if isinstance(countries[country], dict):
+                total = countries[country]["elec"] + countries[country]["nonelec"]
+                if total > 0:
+                    elec_percentage = countries[country]["elec"] / total
+                    if elec_percentage > 0.95:
+                        # Assign 100% to electrified
+                        countries[country] = {"elec": total, "nonelec": 0}
+                    elif elec_percentage < 0.05:
+                        # Assign 100% to non-electrified
+                        countries[country] = {"elec": 0, "nonelec": total}
+    
     print(countries)
     return json.dumps(countries)
 
