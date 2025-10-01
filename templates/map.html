@@ -1,7 +1,7 @@
 {% extends "bootstrap/layout.html" %}
 {% set leaflet = True %}
 {% block content %}
-<script src="{{ url_for('static',filename='js/map.js') }}"></script>
+<script src="{{ static_autoversion(filename='js/map.js') }}"></script>
 {% include nav%}
 <div class="spinner-container"><div class="lds-spinner"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div></div>
 

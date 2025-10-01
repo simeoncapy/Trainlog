@@ -1,7 +1,7 @@
 {% extends "bootstrap/layout.html" %}
 {% include "bootstrap/leafletLayout.html" %}
 {% block content %}
-<script src="{{ url_for('static',filename='js/map.js') }}"></script>
+<script src="{{ static_autoversion(filename='js/map.js') }}"></script>
 
 {% include "bootstrap/navigation.html"%}
 
@@ -461,21 +461,21 @@
                 <!-- Train Power Type Toggle (only for trains) -->
                 {% if tripType == 'train' %}
                 <div class="mb-3">
-                <label class="form-label">Power Type</label>
+                <label class="form-label">{{powerType}}</label>
                 <div class="btn-group w-100" role="group">
                     <input type="radio" class="btn-check" name="powerType" id="powerAuto" value="auto" checked autocomplete="off">
                     <label class="btn btn-outline-secondary" for="powerAuto">
-                    <i class="fas fa-magic"></i> Auto
+                    <i class="fas fa-magic"></i> {{auto}}
                     </label>
                     
                     <input type="radio" class="btn-check" name="powerType" id="powerElectric" value="electric" autocomplete="off">
                     <label class="btn btn-outline-secondary" for="powerElectric">
-                    <i class="fas fa-bolt"></i> Electric
+                    <i class="fas fa-bolt"></i> {{electric}}
                     </label>
                     
                     <input type="radio" class="btn-check" name="powerType" id="powerThermic" value="thermic" autocomplete="off">
                     <label class="btn btn-outline-secondary" for="powerThermic">
-                    <i class="fas fa-fire"></i> Thermic
+                    <i class="fas fa-fire"></i> {{thermic}}
                     </label>
                 </div>
                 </div>
@@ -559,7 +559,7 @@
     var map;
     document.getElementById('mapModal').addEventListener('shown.bs.modal', function () {
         if (typeof map === 'undefined') {
-            map = createMap(wplist[0]);
+            map = createMap(null, wplist[0]);
             var sidebar;
             routing(map, false, tripType);
         }

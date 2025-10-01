@@ -61,7 +61,7 @@ var saveErrorContent = "<h4> {{saveError}} </h4>";
     saveErrorContent += "<p> {{saveErrorDetails}} </p>";
     saveErrorContent += `<p><button onclick="location.reload();"> {{retry}} </button></p>`;
 
-var map = createMap(origCoord);
+var map = createMap(null, origCoord);
 var sidebar;
 var getCountryUrl = '{{url_for("getCountry")}}';
 routing(map, true, type, getCountryUrl);

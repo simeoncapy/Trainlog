@@ -54,7 +54,7 @@
         saveErrorContent += "<p> {{saveErrorDetails}} </p>";
         saveErrorContent += `<p><button onclick="location.reload();"> {{retry}} </button></p>`;
 
-    var map = createMap(origCoord);
+    var map = (null,origCoord);
     var sidebar;
 
     if (window.innerWidth > 600){

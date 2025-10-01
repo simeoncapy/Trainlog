@@ -29,7 +29,7 @@ let destLabel = newTrip.destinationStation?.[1] ?? "Destination";
 const originalOrigCoord = [...origCoord];
 const originalDestCoord = [...destCoord];
 
-const map = createMap(origCoord);
+const map = createMap(null, origCoord);
 
 const sidebar = L.control.sidebar('sidebar', {
     closeButton: true,
