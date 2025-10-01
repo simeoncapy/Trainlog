@@ -5,7 +5,7 @@ import logging.config
 
 from src.pg import get_or_create_pg_session, pg_session
 from src.trips import Trip, compare_trip, parse_date
-from src.utils import get_user_id, mainConn, managed_cursor
+from src.utils import get_user_id, mainConn, managed_cursor, pathConn
 
 logging.config.fileConfig("logging.conf", disable_existing_loggers=False)
 logger = logging.getLogger(__name__)
@@ -50,6 +50,7 @@ def trip_to_csv(trip: Trip):
         trip.currency,
         trip.ticket_id,
         trip.purchasing_date,
+        trip.carbon
     ]
     return items
 
@@ -65,6 +66,10 @@ def sync_trips_from_sqlite(pg_session=None):
 
         cursor.execute("SELECT * FROM trip ORDER BY uid")
         sqlite_trips = cursor.fetchall()
+    with managed_cursor(mainConn) as cursor:
+        cursor.execute("SELECT * FROM paths ORDER BY trip_id")
+        sqlite_paths = cursor.fetchall()
+        trip_paths = {row["trip_id"]: row["path"] for row in sqlite_paths}
 
     csv_buf = io.StringIO()
     csv_writer = csv.writer(csv_buf, delimiter="\t", quoting=csv.QUOTE_MINIMAL)
@@ -118,7 +123,7 @@ def sync_trips_from_sqlite(pg_session=None):
             else None,
             ticket_id=row["ticket_id"] if row["ticket_id"] != "" else None,
             is_project=row["start_datetime"] == 1 or row["end_datetime"] == 1,
-            path=None,  # not needed when inserting trips
+            path=trip_paths.get(row["uid"],""),
         )
         csv_writer.writerow(trip_to_csv(trip))
 
