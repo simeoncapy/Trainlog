@@ -96,7 +96,7 @@ class Trip:
         self.ticket_id = ticket_id
         self.is_project = is_project
         self.path = path
-        self.carbon = calculate_carbon_footprint_for_trip(vars(self), path)
+        self.carbon = calculate_carbon_footprint_for_trip(vars(self), path) if path else None
 
     def keys(self):
         return tuple(vars(self).keys())
