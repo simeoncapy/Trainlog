@@ -178,6 +178,7 @@ from py.utils import (
 )
 from src.api.admin import admin_blueprint
 from src.api.feature_requests import feature_requests_blueprint
+from src.api.leaderboards import _getLeaderboardUsers
 from src.api.news import news_blueprint
 from src.api.finance import finance_blueprint
 from src.api.carbon import carbon_blueprint
@@ -5158,81 +5159,15 @@ def getAdminStats():
 
 @app.route("/getLeaderboardUsers/<type>", methods=["GET"])
 def getLeaderboardUsers(type):
-    # Filter users with "leaderboard" set to True
-    leaderboard_users = User.query.filter_by(leaderboard=True).all()
-    user_list = [user.username for user in leaderboard_users]
-    non_public_users = [
-        username
-        for username in user_list
-        if not User.query.filter_by(username=username).first().is_public()
-    ]
-
-    if type not in ("train_countries", "world_squares", "country_count"):
-        # Create a dictionary of leaderboard users with default values
-        user_dict = {user.username: user.toDict() for user in leaderboard_users}
-        for user in user_dict.values():
-            user["trips"] = 0
-            user["length"] = 0
-            user["last_modified"] = None
-
-        # Update the users with data from the adminStats query
-        with managed_cursor(mainConn) as cursor:
-            for user in cursor.execute(leaderboardStats).fetchall():
-                username = user["username"]
-                if username in user_dict and type == user["type"]:
-                    user_dict[username]["trips"] = user["trips"]
-                    user_dict[username]["length"] = user["length"]
-                    if user["last_modified"] is not None:
-                        user_dict[username]["last_modified"] = user["last_modified"]
-        return jsonify(
-            {
-                "leaderboard_data": list(user_dict.values()),
-                "non_public_users": non_public_users,
-            }
-        )
-    elif type == "country_count":
-        # Create a dictionary of leaderboard users with default values
-        user_dict = {user.username: user.toDict() for user in leaderboard_users}
-        for user in user_dict.values():
-            user["country_count"] = 0
-            user["countries_visited"] = {}
-
-        # Update the users with data from the trip table
-        with managed_cursor(mainConn) as cursor:
-            cursor.execute(
-                countriesLeaderboard.format(", ".join(["?" for _ in user_list])),
-                user_list,
-            )
-            for row in cursor.fetchall():
-                username = row["username"]
-                countries = row["countries"]
-                if username in user_dict:
-                    trip_countries = json.loads(countries)
-                    user_dict[username]["countries_visited"] = dict(
-                        Counter(user_dict[username]["countries_visited"])
-                        + Counter(trip_countries)
-                    )
-                    user_dict[username]["countries_visited"].pop("UN", None)
-
-        for user in user_dict.values():
-            user["countries_visited"] = [
-                country
-                for country, trips in sorted(
-                    user["countries_visited"].items(), key=lambda x: x[1], reverse=True
-                )
-            ]
-            user["country_count"] = len(user["countries_visited"])
-
-        leaderboard_data = sorted(
-            user_dict.values(), key=lambda x: x["country_count"], reverse=True
-        )
-        return jsonify(
-            {
-                "leaderboard_data": leaderboard_data,
-                "non_public_users": non_public_users,
-            }
-        )
-    else:
+    if type in ("train_countries", "world_squares"):
+        leaderboard_users = User.query.filter_by(leaderboard=True).all()
+        user_list = [user.username for user in leaderboard_users]
+        non_public_users = [
+            username
+            for username in user_list
+            if not User.query.filter_by(username=username).first().is_public()
+        ]
+        
         countries_dict = {}
         usernames_placeholders = ",".join(["?" for _ in user_list])
         with managed_cursor(mainConn) as cursor:
@@ -5248,6 +5183,7 @@ def getLeaderboardUsers(type):
                 if item["percent"] not in countries_dict[item["cc"]]:
                     countries_dict[item["cc"]][item["percent"]] = []
                 countries_dict[item["cc"]][item["percent"]].append(item["username"])
+        
         leaderboard_data = []
         for country, percentages in countries_dict.items():
             users_percents = []
@@ -5258,101 +5194,10 @@ def getLeaderboardUsers(type):
         return jsonify(
             {"leaderboard_data": leaderboard_data, "non_public_users": non_public_users}
         )
-
-
-@app.route("/deleteUser/<int:uid>", methods=["POST"])
-@owner_required
-def delete_user(uid):
-    """
-    Deletes a user based on their unique user ID (uid).
-    """
-    user = User.query.get(uid)
-    if not user:
-        return ""
-
-    try:
-        with managed_cursor(mainConn) as cursor:
-            idList = [
-                row["uid"]
-                for row in cursor.execute(
-                    "SELECT uid FROM trip WHERE username=:username",
-                    {"username": user.username},
-                ).fetchall()
-            ]
-
-        formattedDeleteUserPath = deleteUserPath.format(
-            trip_ids=", ".join(("?",) * len(idList))
-        )
-        with managed_cursor(pathConn) as cursor:
-            cursor.execute(formattedDeleteUserPath, tuple(idList)).fetchall()
-        with managed_cursor(mainConn) as cursor:
-            cursor.execute(deleteUserTrips, {"username": user.username})
-        authDb.session.delete(user)
-
-        authDb.session.commit()
-        pathConn.commit()
-        mainConn.commit()
-    except Exception as e:
-        print(e)
-
-    return ""
-
-
-def fetchTripsPaths(username, lastLocal, public):
-    tripList = []
-    now = datetime.now()
-    with managed_cursor(mainConn) as cursor:
-        idList = [
-            row["uid"]
-            for row in cursor.execute(
-                "SELECT uid FROM trip WHERE username=:username", {"username": username}
-            ).fetchall()
-        ]
-
-        trips = cursor.execute(
-            getUniqueUserTrips,
-            {"username": username, "lastLocal": lastLocal, "public": public},
-        ).fetchall()
-
-    trips.reverse()
-    tripIds = [trip["uid"] for trip in trips]
-    print(public, len(tripIds))
-    formattedGetUserLines = getUserLines.format(
-        trip_ids=", ".join(("?",) * len(tripIds))
-    )
-
-    tripIds = []
-    for trip in trips:
-        tripIds.append(trip["uid"])
-    formattedGetUserLines = getUserLines.format(
-        trip_ids=", ".join(("?",) * len(tripIds))
-    )
-
-    tripIds = []
-    for trip in trips:
-        tripIds.append(trip["uid"])
-    formattedGetUserLines = getUserLines.format(
-        trip_ids=", ".join(("?",) * len(tripIds))
-    )
-    with managed_cursor(pathConn) as cursor:
-        pathResult = cursor.execute(formattedGetUserLines, tuple(tripIds)).fetchall()
-
-    paths = {path["trip_id"]: path["path"] for path in pathResult}
-
-    for trip in trips:
-        trip = dict(trip)
-        trip.pop("past")
-        trip.pop("plannedFuture")
-        trip.pop("current")
-        trip.pop("future")
-
-        tripList.append(
-            {"trip": trip, "path": json.loads(paths.get(trip["uid"], "{}"))}
-        )
-
-    print(datetime.now() - now)
-    lastLocal = datetime.strftime(datetime.now(), "%Y-%m-%dT%H:%M:%S.%f")
-    return {"trips": tripList, "lastLocal": lastLocal, "idList": idList}
+    
+    # For all other types, use the helper function with PostgreSQL
+    result = _getLeaderboardUsers(type, User)
+    return result
 
 
 @app.route("/public/<username>/getTripsPaths/<lastLocal>", methods=["GET", "POST"])

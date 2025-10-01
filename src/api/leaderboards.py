@@ -1,0 +1,103 @@
+import logging
+import json
+from collections import Counter
+
+from src.pg import pg_session
+from src.sql import leaderboards as lb_sql
+
+logger = logging.getLogger(__name__)
+
+
+def _getLeaderboardUsers(type, User):
+    # Filter users with "leaderboard" set to True
+    leaderboard_users = User.query.filter_by(leaderboard=True).all()
+    user_list = [user.uid for user in leaderboard_users]
+    non_public_users = [
+        user_id
+        for user_id in user_list
+        if not User.query.filter_by(uid=user_id).first().is_public()
+    ]
+
+    if type not in ("train_countries", "world_squares", "country_count"):
+        # Create a dictionary of leaderboard users with default values
+        user_dict = {user.uid: user.toDict() for user in leaderboard_users}
+        for user in user_dict.values():
+            user["trips"] = 0
+            user["length"] = 0
+            user["last_modified"] = None
+
+        # Update the users with data from the leaderboard stats query
+        with pg_session() as pg:
+            result = pg.execute(lb_sql.leaderboard_stats()).fetchall()
+            for row in result:
+                user_id = row[0]
+                trip_type = row[1]
+                trips = row[2]
+                length = row[3]
+                last_modified = row[4]
+                
+                if user_id in user_dict and type == trip_type:
+                    user_dict[user_id]["trips"] = trips
+                    user_dict[user_id]["length"] = length
+                    if last_modified is not None:
+                        user_dict[user_id]["last_modified"] = last_modified
+        
+        return {
+            "leaderboard_data": list(user_dict.values()),
+            "non_public_users": non_public_users,
+        }
+    
+    elif type == "country_count":
+        # Create a dictionary of leaderboard users with default values
+        user_dict = {user.uid: user.toDict() for user in leaderboard_users}
+        for user in user_dict.values():
+            user["country_count"] = 0
+            user["countries_visited"] = {}
+
+        # Update the users with data from the trips table
+        with pg_session() as pg:
+            result = pg.execute(
+                lb_sql.countries_leaderboard(),
+                {"user_ids": user_list}
+            ).fetchall()
+            
+            for row in result:
+                user_id = row[0]
+                countries = row[1]
+                
+                if user_id in user_dict:
+                    trip_countries = json.loads(countries) if isinstance(countries, str) else countries
+                    user_dict[user_id]["countries_visited"] = dict(
+                        Counter(user_dict[user_id]["countries_visited"])
+                        + Counter(trip_countries)
+                    )
+                    user_dict[user_id]["countries_visited"].pop("UN", None)
+
+        for user in user_dict.values():
+            user["countries_visited"] = [
+                country
+                for country, trips in sorted(
+                    user["countries_visited"].items(), key=lambda x: x[1], reverse=True
+                )
+            ]
+            user["country_count"] = len(user["countries_visited"])
+
+        leaderboard_data = sorted(
+            user_dict.values(), key=lambda x: x["country_count"], reverse=True
+        )
+        return {
+            "leaderboard_data": leaderboard_data,
+            "non_public_users": non_public_users,
+        }
+        
+        leaderboard_data = []
+        for country, percentages in countries_dict.items():
+            users_percents = []
+            for percent, users in percentages.items():
+                users_percents.append({"percent": percent, "user_ids": users})
+            leaderboard_data.append({"cc": country, "data": users_percents})
+
+        return {
+            "leaderboard_data": leaderboard_data,
+            "non_public_users": non_public_users
+        }

@@ -113,15 +113,6 @@ def get_aircraft_co2_value(aircraft_code, distance_km):
     cat = get_flight_category(distance_km)
     return per_cat.get(cat) if cat and cat in per_cat else per_cat.get("all")
 
-def get_trip_distance_km(trip, path, trip_type):
-    if trip_type == 'air' and len(path) == 2:
-        m = calculate_great_circle_distance(path[0], path[1])
-        return (m/1000) * EMISSION_FACTORS['air']['detour_factor']
-    if trip_type == 'air' and len(path) > 2:
-        return calculate_path_distance(path) / 1000
-    m = trip.get('trip_length', 0) or (calculate_path_distance(path) if path else 0)
-    return m / 1000
-
 def calculate_air_emissions(distance_km, path_points, aircraft_code=''):
     f = EMISSION_FACTORS['air']
     v = get_aircraft_co2_value(aircraft_code, distance_km)
@@ -270,7 +261,7 @@ def calculate_carbon_footprint_for_trip(trip, path):
     if t not in ['train','bus','air','helicopter','ferry','cycle','walk','metro','tram','aerialway','car']:
         return 0
     if t == 'helicopter': t = 'air'
-    distance_km = get_trip_distance_km(trip, path, t)
+    distance_km = float(trip.get("trip_length", 0))/1000
     if distance_km == 0: return 0
     if t == 'air':
         return calculate_air_emissions(distance_km, len(path), trip.get('material_type',''))
