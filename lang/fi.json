@@ -407,6 +407,8 @@
     "leaderboardUsername": "Käyttäjänimi",
     "leaderboardTotalTrips": "Matkoja yhteensä",
     "leaderboardTotalKm": "Kilometrejä yhteensä",
+    "leaderboardTotalCarbon": "Kokonais-CO₂",
+    "leaderboardCarbonPerKm": "CO₂ / km",
     "leaderboardLastActive": "Viimeksi aktiivinen",
     "leaderboardPercent": "Prosentti",
     "leaderboardCountry": "Maa",

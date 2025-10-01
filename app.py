@@ -5167,7 +5167,7 @@ def getLeaderboardUsers(type):
             for username in user_list
             if not User.query.filter_by(username=username).first().is_public()
         ]
-        
+       
         countries_dict = {}
         usernames_placeholders = ",".join(["?" for _ in user_list])
         with managed_cursor(mainConn) as cursor:
@@ -5183,21 +5183,114 @@ def getLeaderboardUsers(type):
                 if item["percent"] not in countries_dict[item["cc"]]:
                     countries_dict[item["cc"]][item["percent"]] = []
                 countries_dict[item["cc"]][item["percent"]].append(item["username"])
-        
+       
         leaderboard_data = []
         for country, percentages in countries_dict.items():
             users_percents = []
             for percent, users in percentages.items():
                 users_percents.append({"percent": percent, "usernames": users})
             leaderboard_data.append({"cc": country, "data": users_percents})
-
         return jsonify(
             {"leaderboard_data": leaderboard_data, "non_public_users": non_public_users}
         )
-    
+   
     # For all other types, use the helper function with PostgreSQL
     result = _getLeaderboardUsers(type, User)
-    return result
+    return jsonify(result)
+
+@app.route("/deleteUser/<int:uid>", methods=["POST"])
+@owner_required
+def delete_user(uid):
+    """
+    Deletes a user based on their unique user ID (uid).
+    """
+    user = User.query.get(uid)
+    if not user:
+        return ""
+
+    try:
+        with managed_cursor(mainConn) as cursor:
+            idList = [
+                row["uid"]
+                for row in cursor.execute(
+                    "SELECT uid FROM trip WHERE username=:username",
+                    {"username": user.username},
+                ).fetchall()
+            ]
+
+        formattedDeleteUserPath = deleteUserPath.format(
+            trip_ids=", ".join(("?",) * len(idList))
+        )
+        with managed_cursor(pathConn) as cursor:
+            cursor.execute(formattedDeleteUserPath, tuple(idList)).fetchall()
+        with managed_cursor(mainConn) as cursor:
+            cursor.execute(deleteUserTrips, {"username": user.username})
+        authDb.session.delete(user)
+
+        authDb.session.commit()
+        pathConn.commit()
+        mainConn.commit()
+    except Exception as e:
+        print(e)
+
+    return ""
+
+
+def fetchTripsPaths(username, lastLocal, public):
+    tripList = []
+    now = datetime.now()
+    with managed_cursor(mainConn) as cursor:
+        idList = [
+            row["uid"]
+            for row in cursor.execute(
+                "SELECT uid FROM trip WHERE username=:username", {"username": username}
+            ).fetchall()
+        ]
+
+        trips = cursor.execute(
+            getUniqueUserTrips,
+            {"username": username, "lastLocal": lastLocal, "public": public},
+        ).fetchall()
+
+    trips.reverse()
+    tripIds = [trip["uid"] for trip in trips]
+    print(public, len(tripIds))
+    formattedGetUserLines = getUserLines.format(
+        trip_ids=", ".join(("?",) * len(tripIds))
+    )
+
+    tripIds = []
+    for trip in trips:
+        tripIds.append(trip["uid"])
+    formattedGetUserLines = getUserLines.format(
+        trip_ids=", ".join(("?",) * len(tripIds))
+    )
+
+    tripIds = []
+    for trip in trips:
+        tripIds.append(trip["uid"])
+    formattedGetUserLines = getUserLines.format(
+        trip_ids=", ".join(("?",) * len(tripIds))
+    )
+    with managed_cursor(pathConn) as cursor:
+        pathResult = cursor.execute(formattedGetUserLines, tuple(tripIds)).fetchall()
+
+    paths = {path["trip_id"]: path["path"] for path in pathResult}
+
+    for trip in trips:
+        trip = dict(trip)
+        trip.pop("past")
+        trip.pop("plannedFuture")
+        trip.pop("current")
+        trip.pop("future")
+
+        tripList.append(
+            {"trip": trip, "path": json.loads(paths.get(trip["uid"], "{}"))}
+        )
+
+    print(datetime.now() - now)
+    lastLocal = datetime.strftime(datetime.now(), "%Y-%m-%dT%H:%M:%S.%f")
+    return {"trips": tripList, "lastLocal": lastLocal, "idList": idList}
 
 
 @app.route("/public/<username>/getTripsPaths/<lastLocal>", methods=["GET", "POST"])
@@ -7530,6 +7623,8 @@ def leaderboard(type):
         template = "leaderboard_countries.html"
     elif type == "world_squares":
         template = "leaderboard_world_squares.html"
+    elif type == "carbon":
+        template = "leaderboard_carbon.html"
     else:
         template = "leaderboard.html"
 

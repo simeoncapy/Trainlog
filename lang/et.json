@@ -407,6 +407,8 @@
     "leaderboardUsername": "Kasutajanimi",
     "leaderboardTotalTrips": "Reiside Kokku",
     "leaderboardTotalKm": "Kilomeetreid Kokku",
+    "leaderboardTotalCarbon": "Kogu CO₂",
+    "leaderboardCarbonPerKm": "CO₂ / km",
     "leaderboardLastActive": "Viimati Aktiivne",
     "leaderboardPercent": "Protsent",
     "leaderboardCountry": "Riik",

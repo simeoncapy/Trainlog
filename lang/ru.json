@@ -407,6 +407,8 @@
     "leaderboardUsername": "Имя пользователя",
     "leaderboardTotalTrips": "Всего поездок",
     "leaderboardTotalKm": "Всего км",
+    "leaderboardTotalCarbon": "Общее количество CO₂",
+    "leaderboardCarbonPerKm": "CO₂ / км",
     "leaderboardLastActive": "Последняя активность",
     "leaderboardPercent": "Процент",
     "leaderboardCountry": "Страна",

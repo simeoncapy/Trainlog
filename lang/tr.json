@@ -407,6 +407,8 @@
     "leaderboardUsername": "Kullanıcı Adı",
     "leaderboardTotalTrips": "Toplam Seyahatler",
     "leaderboardTotalKm": "Toplam Km",
+    "leaderboardTotalCarbon": "Toplam CO₂",
+    "leaderboardCarbonPerKm": "CO₂ / km",
     "leaderboardLastActive": "En son aktif olduğu zaman",
     "leaderboardPercent": "Yüzde",
     "leaderboardCountry": "Ülke",

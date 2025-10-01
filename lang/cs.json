@@ -407,6 +407,8 @@
     "leaderboardUsername": "Uživatelské jméno",
     "leaderboardTotalTrips": "Celkové Cesty",
     "leaderboardTotalKm": "Celkový Počet Km",
+    "leaderboardTotalCarbon": "Celkové CO₂",
+    "leaderboardCarbonPerKm": "CO₂ / km",
     "leaderboardLastActive": "Naposledy Aktivní",
     "leaderboardPercent": "Procento",
     "leaderboardCountry": "Země",

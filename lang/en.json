@@ -407,6 +407,8 @@
     "leaderboardUsername": "Username",
     "leaderboardTotalTrips": "Total Trips",
     "leaderboardTotalKm": "Total Km",
+    "leaderboardTotalCarbon": "Total CO₂",
+    "leaderboardCarbonPerKm": "CO₂ / km",
     "leaderboardLastActive": "Last Active",
     "leaderboardPercent": "Percent",
     "leaderboardCountry": "Country",

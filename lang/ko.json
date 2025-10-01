@@ -407,6 +407,8 @@
     "leaderboardUsername": "아이디",
     "leaderboardTotalTrips": "총 여정 수",
     "leaderboardTotalKm": "총 km",
+    "leaderboardTotalCarbon": "총 CO₂",
+    "leaderboardCarbonPerKm": "CO₂ / km",
     "leaderboardLastActive": "마지막 활동",
     "leaderboardPercent": "탐험률",
     "leaderboardCountry": "국가",

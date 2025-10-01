@@ -407,6 +407,8 @@
     "leaderboardUsername": "用户名",
     "leaderboardTotalTrips": "总行程",
     "leaderboardTotalKm": "总公里数",
+    "leaderboardTotalCarbon": "总CO₂",
+    "leaderboardCarbonPerKm": "CO₂ / 公里",
     "leaderboardLastActive": "上次活跃时间",
     "leaderboardPercent": "百分比",
     "leaderboardCountry": "国家",

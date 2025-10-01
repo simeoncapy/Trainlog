@@ -407,6 +407,8 @@
     "leaderboardUsername": "Nom d'utilisateur",
     "leaderboardTotalTrips": "Total des Voyages",
     "leaderboardTotalKm": "Total Km",
+    "leaderboardTotalCarbon": "CO₂ total",
+    "leaderboardCarbonPerKm": "CO₂ / km",
     "leaderboardLastActive": "Dernière Activité",
     "leaderboardPercent": "Pourcentage",
     "leaderboardCountry": "Pays",

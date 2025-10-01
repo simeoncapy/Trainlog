@@ -407,6 +407,8 @@
     "leaderboardUsername": "Brugernavn",
     "leaderboardTotalTrips": "Totale Rejser",
     "leaderboardTotalKm": "Totale Km",
+    "leaderboardTotalCarbon": "Samlet CO₂",
+    "leaderboardCarbonPerKm": "CO₂ / km",
     "leaderboardLastActive": "Sidst Aktiv",
     "leaderboardPercent": "Procent",
     "leaderboardCountry": "Land",

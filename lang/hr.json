@@ -407,6 +407,8 @@
     "leaderboardUsername": "Korisničko Ime",
     "leaderboardTotalTrips": "Ukupna Putovanja",
     "leaderboardTotalKm": "Ukupno Km",
+    "leaderboardTotalCarbon": "Ukupno CO₂",
+    "leaderboardCarbonPerKm": "CO₂ / km",
     "leaderboardLastActive": "Zadnja Aktivnost",
     "leaderboardPercent": "Postotak",
     "leaderboardCountry": "Zemlja",

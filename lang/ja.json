@@ -407,6 +407,8 @@
     "leaderboardUsername": "ユーザー名",
     "leaderboardTotalTrips": "合計旅行数",
     "leaderboardTotalKm": "合計キロメートル",
+    "leaderboardTotalCarbon": "合計CO₂",
+    "leaderboardCarbonPerKm": "CO₂ / km",
     "leaderboardLastActive": "最終アクティブ",
     "leaderboardPercent": "パーセント",
     "leaderboardCountry": "国",
