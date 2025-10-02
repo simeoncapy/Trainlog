@@ -616,5 +616,6 @@
     "auto": "Bil",
     "electric": "Elektrisk",
     "thermic": "Termisk",
-    "powerType": "Krafttype"
+    "powerType": "Krafttype",
+    "useOldRouter": "Bytt til klassisk rutemotor"
 }

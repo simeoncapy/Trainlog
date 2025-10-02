@@ -616,5 +616,6 @@
     "auto": "Auto",
     "electric": "Elektryczny",
     "thermic": "Termiczny",
-    "powerType": "Typ zasilania"
+    "powerType": "Typ zasilania",
+    "useOldRouter": "Przełącz na klasyczny silnik trasowania"
 }

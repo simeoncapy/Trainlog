@@ -616,5 +616,6 @@
     "auto": "Otomatik",
     "electric": "Elektrik",
     "thermic": "Termik",
-    "powerType": "Güç türü"
+    "powerType": "Güç türü",
+    "useOldRouter": "Klasik yönlendirme motoruna geç"
 }

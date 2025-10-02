@@ -616,5 +616,6 @@
     "auto": "自动",
     "electric": "电动",
     "thermic": "热能",
-    "powerType": "动力类型"
+    "powerType": "动力类型",
+    "useOldRouter": "切换到经典路由引擎"
 }

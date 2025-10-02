@@ -616,5 +616,6 @@
     "auto": "Auto",
     "electric": "Elektrisch",
     "thermic": "Thermisch",
-    "powerType": "Vermogenstype"
+    "powerType": "Vermogenstype",
+    "useOldRouter": "Overschakelen naar klassieke routeringsengine"
 }

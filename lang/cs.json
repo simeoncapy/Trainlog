@@ -616,5 +616,6 @@
     "auto": "Auto",
     "electric": "Elektrický",
     "thermic": "Tepelný",
-    "powerType": "Typ napájení"
+    "powerType": "Typ napájení",
+    "useOldRouter": "Přepnout na klasický směrovací stroj"
 }

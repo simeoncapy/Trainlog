@@ -34,6 +34,8 @@ antpathStyles =  {
   hardwareAccelerated: true
 };
 
+var useOldRouter = false;
+
 var markergroup = new L.featureGroup(markerIconStart, markerIconEnd);
 
 var routeDetails = null;
@@ -186,6 +188,28 @@ function handleGpxUpload(event) {
       newTrip["estimated_trip_duration"] = estimated_trip_duration;
   };
   reader.readAsText(file);
+}
+
+function switchRouter() {
+  useOldRouter = document.getElementById('oldRouterToggle').checked;
+  
+  // Show loading indicator
+  sidebar.setContent(spinnerContent);
+  
+  // Update the router to pass the old_router parameter through our backend
+  var routerUrl = `${window.location.origin}/forwardRouting/${type}/route/v1`;
+  control.options.router.options.serviceUrl = routerUrl;
+  
+  // Store the preference so the backend knows which router to use
+  control.options.router.options.requestParameters = control.options.router.options.requestParameters || {};
+  if (useOldRouter) {
+    control.options.router.options.requestParameters.use_old_router = 'true';
+  } else {
+    delete control.options.router.options.requestParameters.use_old_router;
+  }
+  
+  // Recompute the route with the new router
+  control.route();
 }
 
 window.removeWaypoint = function(index) {
@@ -358,7 +382,22 @@ function routing(map, showSidebar=true, type){
     }).on('routeselected', function(){
       var content = `<h4>${texts.routeTitle.replace("{origLabel}", origLabel).replace("{destLabel}", destLabel)}</h4>`;
       
+      // Add router selector for train, tram, metro
       if(["train", "tram", "metro"].includes(type)){
+        content += `
+          <div style="margin: 10px 0; padding: 10px; background-color: #f0f0f0; border-radius: 4px;">
+            <label style="display: flex; align-items: center; cursor: pointer;">
+              <input 
+                type="checkbox" 
+                id="oldRouterToggle" 
+                onchange="switchRouter()"
+                style="margin-right: 8px;"
+                ${useOldRouter ? 'checked' : ''}
+              >
+              <span>${texts.useOldRouter}</span>
+            </label>
+          </div>
+        `;
         content += `<p><small>${texts.fineTuneNote}</small></p>`;
       }
       
@@ -396,8 +435,31 @@ function routing(map, showSidebar=true, type){
           newTrip["waypoints"] = JSON.stringify(latLngs);
       }
     }).on('routingerror', function(){
-      sidebar.setContent(errorContent);
+      var errorContentWithToggle = errorContent;
+      
+      // Add router selector for train, tram, metro even on error
+      if(["train", "tram", "metro"].includes(type)){
+        errorContentWithToggle = `
+          <div style="margin: 10px 0; padding: 10px; background-color: #f0f0f0; border-radius: 4px;">
+            <label style="display: flex; align-items: center; cursor: pointer;">
+              <input 
+                type="checkbox" 
+                id="oldRouterToggle" 
+                onchange="switchRouter()"
+                style="margin-right: 8px;"
+                ${useOldRouter ? 'checked' : ''}
+              >
+              <span>${texts.useOldRouter}</span>
+            </label>
+          </div>
+        ` + errorContent;
+      }
+      
+      sidebar.setContent(errorContentWithToggle);
     }).addTo(map);
+
+    // Store control globally so switchRouter can access it
+    window.control = control;
   }
 
   if (showSidebar){
@@ -406,3 +468,4 @@ function routing(map, showSidebar=true, type){
     }, 500);
   }
 }
+window.switchRouter = switchRouter;

@@ -616,5 +616,6 @@
     "auto": "Auto",
     "electric": "Elettrico",
     "thermic": "Termico",
-    "powerType": "Tipo di alimentazione"
+    "powerType": "Tipo di alimentazione",
+    "useOldRouter": "Passa al motore di routing classico"
 }

@@ -616,5 +616,6 @@
     "auto": "自動",
     "electric": "電気",
     "thermic": "熱エネルギー",
-    "powerType": "電力タイプ"
+    "powerType": "電力タイプ",
+    "useOldRouter": "クラシックルーティングエンジンに切り替え"
 }

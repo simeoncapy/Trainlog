@@ -616,5 +616,6 @@
     "auto": "자동",
     "electric": "전기",
     "thermic": "열",
-    "powerType": "전력 유형"
+    "powerType": "전력 유형",
+    "useOldRouter": "클래식 라우팅 엔진으로 전환"
 }

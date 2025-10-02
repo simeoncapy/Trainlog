@@ -616,5 +616,6 @@
     "auto": "Auto",
     "electric": "Électrique",
     "thermic": "Thermique",
-    "powerType": "Traction"
+    "powerType": "Traction",
+    "useOldRouter": "Passer au moteur de routage classique"
 }

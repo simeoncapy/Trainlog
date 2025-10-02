@@ -616,5 +616,6 @@
     "auto": "Auto",
     "electric": "Elektriline",
     "thermic": "Termiline",
-    "powerType": "Võimaluse tüüp"
+    "powerType": "Võimaluse tüüp",
+    "useOldRouter": "Lülita klassikalisele marsruutimismootorile"
 }

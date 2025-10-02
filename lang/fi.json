@@ -616,5 +616,6 @@
     "auto": "Auto",
     "electric": "Sähköinen",
     "thermic": "Terminen",
-    "powerType": "Teholaji"
+    "powerType": "Teholaji",
+    "useOldRouter": "Vaihda perinteiseen reititysmoottoriin"
 }

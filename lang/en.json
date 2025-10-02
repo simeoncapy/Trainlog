@@ -616,5 +616,6 @@
     "auto": "Auto",
     "electric": "Electric",
     "thermic": "Thermic",
-    "powerType": "Power type"
+    "powerType": "Power type",
+    "useOldRouter": "Switch to classic routing engine"
 }

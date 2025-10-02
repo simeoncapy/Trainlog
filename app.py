@@ -4450,7 +4450,12 @@ def forwardRouting(path, routingType, args=None):
     radiuses = None  # initialize in case ferry needs it later
 
     if routingType == "train":
-        base = "https://openrailrouting.maahl.net"
+        # Check if using old OSRM router
+        use_old_router = request.args.get('use_old_router', 'false').lower() == 'true'
+        if use_old_router:
+            base = "http://routing.trainlog.me:5000"
+        else:
+            base = "https://openrailrouting.maahl.net"
     elif routingType == "ferry":
         base = "http://routing.trainlog.me:5001"
         coord_pairs = [
@@ -4558,6 +4563,7 @@ def forwardRouting(path, routingType, args=None):
 
     if not args:
         args = request.query_string.decode("utf-8")
+        args = args.replace("&use_old_router=true", "").replace("use_old_router=true&", "").replace("use_old_router=true", "")
 
     def build_url(base_url):
         full_url = f"{base_url}/{path}?{args}"
@@ -4599,10 +4605,11 @@ def forwardRouting(path, routingType, args=None):
             print(f"Router failed: {base}, falling back to OSRM. Reason: {e}")
             fallback_url = build_url(routers["fallback"][0])
             return make_response(requests.get(fallback_url).json(), 235)
-    elif routingType == "train":
+    elif routingType == "train" and not use_old_router :
         return convert_graphhopper_to_osrm(requests.get(build_gh_url(base)).json())
     else:
         # Other routing types: no fallback
+        print(build_url(base))
         return requests.get(build_url(base)).text
 
 

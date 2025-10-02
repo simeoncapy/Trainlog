@@ -616,5 +616,6 @@
     "auto": "Auto",
     "electric": "Električni",
     "thermic": "Termički",
-    "powerType": "Tip energije"
+    "powerType": "Tip energije",
+    "useOldRouter": "Prebaci na klasični motor za usmjeravanje"
 }

@@ -616,5 +616,6 @@
     "auto": "Autó",
     "electric": "Elektromos",
     "thermic": "Termikus",
-    "powerType": "Teljesítménytípus"
+    "powerType": "Teljesítménytípus",
+    "useOldRouter": "Váltás a klasszikus útvonalmotorra"
 }

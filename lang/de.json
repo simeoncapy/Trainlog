@@ -616,5 +616,6 @@
     "auto": "Auto",
     "electric": "Elektrisch",
     "thermic": "Thermisch",
-    "powerType": "Leistungsart"
+    "powerType": "Leistungsart",
+    "useOldRouter": "Zum klassischen Routingsystem wechseln"
 }

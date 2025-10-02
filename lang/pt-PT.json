@@ -616,5 +616,6 @@
     "auto": "Auto",
     "electric": "Elétrico",
     "thermic": "Térmico",
-    "powerType": "Tipo de potência"
+    "powerType": "Tipo de potência",
+    "useOldRouter": "Mudar para o motor de roteamento clássico"
 }
