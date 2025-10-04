@@ -568,8 +568,8 @@
     $(document).ready(function () {
         $('#editPathButton').on('click', function () {
             updatedPath = currentRoute;
+            if(routeDetails == null){routeDetails = {};}
             routeDetails["powerType"] = $('input[name="powerType"]:checked').val();
-            console.log(routeDetails)
             updatedRouteDetails = routeDetails;
             lastImportType = 'manual';
             $('#mapModal').modal('hide');
