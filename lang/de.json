@@ -617,5 +617,6 @@
     "electric": "Elektrisch",
     "thermic": "Thermisch",
     "powerType": "Leistungsart",
-    "useOldRouter": "Zum klassischen Routingsystem wechseln"
+    "useOldRouter": "Zum klassischen Routingsystem wechseln",
+    "useNewRouter": "Neuen Router ausprobieren (zeigt Elektrifizierung)"
 }

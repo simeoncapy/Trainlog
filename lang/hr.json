@@ -617,5 +617,6 @@
     "electric": "Električni",
     "thermic": "Termički",
     "powerType": "Tip energije",
-    "useOldRouter": "Prebaci na klasični motor za usmjeravanje"
+    "useOldRouter": "Prebaci na klasični motor za usmjeravanje",
+    "useNewRouter": "Isprobajte novi router (prikazuje elektrifikaciju)"
 }

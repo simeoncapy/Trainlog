@@ -617,5 +617,6 @@
     "electric": "電気",
     "thermic": "熱エネルギー",
     "powerType": "電力タイプ",
-    "useOldRouter": "クラシックルーティングエンジンに切り替え"
+    "useOldRouter": "クラシックルーティングエンジンに切り替え",
+    "useNewRouter": "新しいルーターを試す（電化を表示）"
 }

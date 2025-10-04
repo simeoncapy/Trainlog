@@ -617,5 +617,6 @@
     "electric": "Elektryczny",
     "thermic": "Termiczny",
     "powerType": "Typ zasilania",
-    "useOldRouter": "Przełącz na klasyczny silnik trasowania"
+    "useOldRouter": "Przełącz na klasyczny silnik trasowania",
+    "useNewRouter": "Wypróbuj nowy router (pokazuje elektryfikację)"
 }

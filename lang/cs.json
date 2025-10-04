@@ -617,5 +617,6 @@
     "electric": "Elektrický",
     "thermic": "Tepelný",
     "powerType": "Typ napájení",
-    "useOldRouter": "Přepnout na klasický směrovací stroj"
+    "useOldRouter": "Přepnout na klasický směrovací stroj",
+    "useNewRouter": "Vyzkoušejte nový router (zobrazuje elektrifikaci)"
 }

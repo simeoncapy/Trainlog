@@ -617,5 +617,6 @@
     "electric": "Elektrisch",
     "thermic": "Thermisch",
     "powerType": "Vermogenstype",
-    "useOldRouter": "Overschakelen naar klassieke routeringsengine"
+    "useOldRouter": "Overschakelen naar klassieke routeringsengine",
+    "useNewRouter": "Probeer nieuwe router (toont elektrificatie)"
 }

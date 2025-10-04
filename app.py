@@ -882,7 +882,7 @@ def saveTripToDb(username, newTrip, newPath, trip_type="train"):
         )
         countries = json.dumps(countries)
     else:
-        countries = getCountriesFromPath(newPath, newTrip["type"], newTrip["details"])
+        countries = getCountriesFromPath(newPath, newTrip["type"], newTrip["details"], newTrip["powerType"])
 
     if "originManualToggle" in newTrip.keys():
         saveManualStation(
@@ -4451,11 +4451,11 @@ def forwardRouting(path, routingType, args=None):
 
     if routingType == "train":
         # Check if using old OSRM router
-        use_old_router = request.args.get('use_old_router', 'false').lower() == 'true'
-        if use_old_router:
-            base = "http://routing.trainlog.me:5000"
-        else:
+        use_new_router = request.args.get('use_new_router', 'false').lower() == 'true'
+        if use_new_router:
             base = "https://openrailrouting.maahl.net"
+        else:
+            base = "http://routing.trainlog.me:5000"
     elif routingType == "ferry":
         base = "http://routing.trainlog.me:5001"
         coord_pairs = [
@@ -4563,7 +4563,7 @@ def forwardRouting(path, routingType, args=None):
 
     if not args:
         args = request.query_string.decode("utf-8")
-        args = args.replace("&use_old_router=true", "").replace("use_old_router=true&", "").replace("use_old_router=true", "")
+        args = args.replace("&use_new_router=true", "").replace("use_new_router=true&", "").replace("use_new_router=true", "")
 
     def build_url(base_url):
         full_url = f"{base_url}/{path}?{args}"
@@ -4605,7 +4605,7 @@ def forwardRouting(path, routingType, args=None):
             print(f"Router failed: {base}, falling back to OSRM. Reason: {e}")
             fallback_url = build_url(routers["fallback"][0])
             return make_response(requests.get(fallback_url).json(), 235)
-    elif routingType == "train" and not use_old_router :
+    elif routingType == "train" and use_new_router :
         return convert_graphhopper_to_osrm(requests.get(build_gh_url(base)).json())
     else:
         # Other routing types: no fallback

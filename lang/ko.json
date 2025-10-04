@@ -617,5 +617,6 @@
     "electric": "전기",
     "thermic": "열",
     "powerType": "전력 유형",
-    "useOldRouter": "클래식 라우팅 엔진으로 전환"
+    "useOldRouter": "클래식 라우팅 엔진으로 전환",
+    "useNewRouter": "새 라우터를 시도하세요 (전력 공급을 표시)"
 }

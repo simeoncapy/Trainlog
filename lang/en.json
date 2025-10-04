@@ -617,5 +617,6 @@
     "electric": "Electric",
     "thermic": "Thermic",
     "powerType": "Power type",
-    "useOldRouter": "Switch to classic routing engine"
+    "useOldRouter": "Switch to classic routing engine",
+    "useNewRouter": "Try new router (shows electrification)"
 }

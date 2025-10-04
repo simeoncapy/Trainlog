@@ -617,5 +617,6 @@
     "electric": "Elektrisk",
     "thermic": "Termisk",
     "powerType": "Krafttype",
-    "useOldRouter": "Bytt til klassisk rutemotor"
+    "useOldRouter": "Bytt til klassisk rutemotor",
+    "useNewRouter": "Prøv ny ruter (viser elektrifisering)"
 }

@@ -617,5 +617,6 @@
     "electric": "Elektromos",
     "thermic": "Termikus",
     "powerType": "Teljesítménytípus",
-    "useOldRouter": "Váltás a klasszikus útvonalmotorra"
+    "useOldRouter": "Váltás a klasszikus útvonalmotorra",
+    "useNewRouter": "Próbálja ki az új útválasztót (mutatja az elektromos hálózatot)"
 }

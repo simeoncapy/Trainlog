@@ -213,7 +213,7 @@ def getDistance(orig, dest):
     return distance
 
 
-def getCountriesFromPath(path, type, routing_details=None):
+def getCountriesFromPath(path, type, routing_details=None, powerType=None):
     countries = {}
     country = None
     if type in ["air", "helicopter"]:
@@ -235,18 +235,22 @@ def getCountriesFromPath(path, type, routing_details=None):
         return json.dumps(countries)
    
     # Determine power type (auto, electric, or thermic)
-    power_type = routing_details.get("powerType", "auto") if routing_details else "auto"
+    # If powerType is provided, use it; otherwise use routing_details
+    if powerType:
+        power_type = powerType
+    else:
+        power_type = routing_details.get("powerType", "auto") if routing_details else "auto"
     
     # Check if we should use electrification data for trains
     use_electrification = (
         type == "train" and
-        routing_details and
-        (power_type != "auto" or "electrified" in routing_details)
+        (powerType is not None or  # Force electrification tracking if powerType is set
+         (routing_details and (power_type != "auto" or "electrified" in routing_details)))
     )
    
     # Create electrification lookup for train routes (only used when power_type is "auto")
     electrification_map = {}
-    if use_electrification and power_type == "auto":
+    if use_electrification and power_type == "auto" and routing_details:
         for elec_segment in routing_details["electrified"]:
             start_idx, end_idx, elec_type = elec_segment
             for i in range(start_idx, end_idx):

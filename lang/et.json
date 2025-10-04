@@ -617,5 +617,6 @@
     "electric": "Elektriline",
     "thermic": "Termiline",
     "powerType": "Võimaluse tüüp",
-    "useOldRouter": "Lülita klassikalisele marsruutimismootorile"
+    "useOldRouter": "Lülita klassikalisele marsruutimismootorile",
+    "useNewRouter": "Proovi uut ruuterit (kuvab elektrifitseerimist)"
 }

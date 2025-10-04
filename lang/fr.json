@@ -617,5 +617,6 @@
     "electric": "Électrique",
     "thermic": "Thermique",
     "powerType": "Traction",
-    "useOldRouter": "Passer au moteur de routage classique"
+    "useOldRouter": "Passer au routeur classique",
+    "useNewRouter": "Essayer le nouveau routeur (affiche l'électrification)"
 }

@@ -34,7 +34,7 @@ antpathStyles =  {
   hardwareAccelerated: true
 };
 
-var useOldRouter = false;
+var useNewRouter = false;
 
 var markergroup = new L.featureGroup(markerIconStart, markerIconEnd);
 
@@ -191,21 +191,36 @@ function handleGpxUpload(event) {
 }
 
 function switchRouter() {
-  useOldRouter = document.getElementById('oldRouterToggle').checked;
+  useNewRouter = document.getElementById('newRouterToggle').checked;
   
   // Show loading indicator
   sidebar.setContent(spinnerContent);
   
-  // Update the router to pass the old_router parameter through our backend
+  // Clear route details when switching routers to prevent mixing data
+  routeDetails = null;
+  if (newTrip["details"]) {
+    delete newTrip["details"];
+  }
+  
+  // Update the router to pass the new_router parameter through our backend
   var routerUrl = `${window.location.origin}/forwardRouting/${type}/route/v1`;
   control.options.router.options.serviceUrl = routerUrl;
   
-  // Store the preference so the backend knows which router to use
-  control.options.router.options.requestParameters = control.options.router.options.requestParameters || {};
-  if (useOldRouter) {
-    control.options.router.options.requestParameters.use_old_router = 'true';
+  // Preserve existing parameters (like exclude from recomputeRoute)
+  var currentParams = control.options.router.options.requestParameters || {};
+  
+  // Update the use_new_router parameter
+  if (useNewRouter) {
+    currentParams.use_new_router = 'true';
   } else {
-    delete control.options.router.options.requestParameters.use_old_router;
+    delete currentParams.use_new_router;
+  }
+  
+  // Only set requestParameters if there are any parameters to set
+  if (Object.keys(currentParams).length > 0) {
+    control.options.router.options.requestParameters = currentParams;
+  } else {
+    delete control.options.router.options.requestParameters;
   }
   
   // Recompute the route with the new router
@@ -389,12 +404,12 @@ function routing(map, showSidebar=true, type){
             <label style="display: flex; align-items: center; cursor: pointer;">
               <input 
                 type="checkbox" 
-                id="oldRouterToggle" 
+                id="newRouterToggle" 
                 onchange="switchRouter()"
                 style="margin-right: 8px;"
-                ${useOldRouter ? 'checked' : ''}
+                ${useNewRouter ? 'checked' : ''}
               >
-              <span>${texts.useOldRouter}</span>
+              <span>${texts.useNewRouter} ᵦ</span>
             </label>
           </div>
         `;
@@ -444,12 +459,12 @@ function routing(map, showSidebar=true, type){
             <label style="display: flex; align-items: center; cursor: pointer;">
               <input 
                 type="checkbox" 
-                id="oldRouterToggle" 
+                id="newRouterToggle" 
                 onchange="switchRouter()"
                 style="margin-right: 8px;"
-                ${useOldRouter ? 'checked' : ''}
+                ${useNewRouter ? 'checked' : ''}
               >
-              <span>${texts.useOldRouter}</span>
+              <span>${texts.useNewRouter} ᵦ</span>
             </label>
           </div>
         ` + errorContent;

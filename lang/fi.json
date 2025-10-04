@@ -617,5 +617,6 @@
     "electric": "Sähköinen",
     "thermic": "Terminen",
     "powerType": "Teholaji",
-    "useOldRouter": "Vaihda perinteiseen reititysmoottoriin"
+    "useOldRouter": "Vaihda perinteiseen reititysmoottoriin",
+    "useNewRouter": "Kokeile uutta reititintä (näyttää sähköistyksen)"
 }

@@ -617,5 +617,6 @@
     "electric": "Elétrico",
     "thermic": "Térmico",
     "powerType": "Tipo de potência",
-    "useOldRouter": "Mudar para o motor de roteamento clássico"
+    "useOldRouter": "Mudar para o motor de roteamento clássico",
+    "useNewRouter": "Tente novo router (mostra eletrificação)"
 }

@@ -617,5 +617,6 @@
     "electric": "Elektrisch",
     "thermic": "Thermisch",
     "powerType": "Leistungstyp",
-    "useOldRouter": "Uf klassische Routenmaschine umschalte"
+    "useOldRouter": "Uf klassische Routenmaschine umschalte",
+    "useNewRouter": "Probieret nejer Router (zeigt Elektrifizierung)"
 }

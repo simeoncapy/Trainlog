@@ -617,5 +617,6 @@
     "electric": "Elektrik",
     "thermic": "Termik",
     "powerType": "Güç türü",
-    "useOldRouter": "Klasik yönlendirme motoruna geç"
+    "useOldRouter": "Klasik yönlendirme motoruna geç",
+    "useNewRouter": "Yeni yönlendiriciyi deneyin (elektrifikasyonu gösterir)"
 }

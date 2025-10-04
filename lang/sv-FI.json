@@ -617,5 +617,6 @@
     "electric": "Elektrisk",
     "thermic": "Termisk",
     "powerType": "Krafttyp",
-    "useOldRouter": "Byt till klassisk routingmotor"
+    "useOldRouter": "Byt till klassisk routingmotor",
+    "useNewRouter": "Prova ny router (visar elektrifiering)"
 }
