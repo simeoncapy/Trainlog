@@ -30,21 +30,28 @@ def getStatsCountries(cursor, query, username, km, tripType, year=None):
         query, {"username": username, "tripType": tripType, "year": year}
     ).fetchall()
     countries = {}
+    
     for countryList in result:
         countryDict = json.loads(countryList[0])
+        
         for country in countryDict:
             if country not in countries.keys():
                 countries[country] = {}
                 countries[country]["total"] = 0
                 countries[country]["past"] = 0
                 countries[country]["plannedFuture"] = 0
+            
+            if isinstance(countryDict[country], dict):
+                country_value = sum(countryDict[country].values())
+            else:
+                country_value = countryDict[country]
+            
             if km:
-                countries[country]["total"] += countryDict[country]
+                countries[country]["total"] += country_value
                 if countryList["past"] != 0:
-                    countries[country]["past"] += countryDict[country]
+                    countries[country]["past"] += country_value
                 elif countryList["plannedFuture"] != 0:
-                    countries[country]["plannedFuture"] += countryDict[country]
-
+                    countries[country]["plannedFuture"] += country_value
             else:
                 countries[country]["total"] += (
                     countryList["past"] + countryList["plannedFuture"]
@@ -53,7 +60,7 @@ def getStatsCountries(cursor, query, username, km, tripType, year=None):
                     countries[country]["past"] += countryList["past"]
                 elif countryList["plannedFuture"] != 0:
                     countries[country]["plannedFuture"] += countryList["plannedFuture"]
-
+    
     countries = dict(
         sorted(
             countries.items(),
@@ -61,6 +68,7 @@ def getStatsCountries(cursor, query, username, km, tripType, year=None):
             reverse=True,
         )
     )
+    
     countriesList = []
     for country in countries:
         countriesList.append(
@@ -70,6 +78,7 @@ def getStatsCountries(cursor, query, username, km, tripType, year=None):
                 "plannedFuture": countries[country]["plannedFuture"],
             }
         )
+    
     return countriesList
 
 
