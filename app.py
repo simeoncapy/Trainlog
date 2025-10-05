@@ -882,7 +882,7 @@ def saveTripToDb(username, newTrip, newPath, trip_type="train"):
         )
         countries = json.dumps(countries)
     else:
-        countries = getCountriesFromPath(newPath, newTrip["type"], newTrip["details"], newTrip["powerType"])
+        countries = getCountriesFromPath(newPath, newTrip["type"], newTrip["details"], newTrip.get("powerType", None))
 
     if "originManualToggle" in newTrip.keys():
         saveManualStation(
