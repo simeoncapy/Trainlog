@@ -430,7 +430,10 @@ def _update_trip_in_sqlite(
 
     if "estimated_trip_duration" in formData and "trip_length" in formData:
         updateData["countries"] = getCountriesFromPath(
-            [{"lat": coord[0], "lng": coord[1]} for coord in path], formData["type"], json.loads(formData.get("details"))
+            [
+                {"lat": coord[0], "lng": coord[1]} for coord in path], 
+                formData["type"], 
+                json.loads(formData.get("details")) if formData.get("details") is not None else None
         )
         updateData["estimated_trip_duration"] = formData["estimated_trip_duration"]
         updateData["trip_length"] = formData["trip_length"]
