@@ -93,6 +93,7 @@ def setup_db():
     with pg_session() as session:
         for m in migrations:
             apply_migration(session, m)
+        load_base_data(session, "airliners")
 
 
 def list_migrations_to_apply():
@@ -159,6 +160,43 @@ def get_db_connection_string():
     pg_password = os.environ["POSTGRES_PASSWORD"]
 
     return f"postgresql+psycopg2://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_db}"
+
+def load_base_data(pg, table_name):
+    """
+    Load base data from CSV files into the database using COPY.
+    Only loads data if the table is empty.
+    
+    Args:
+        pg: PostgreSQL session
+        table_name: Name of the table to load data into (also the CSV filename without extension)
+    """
+    # Check if table already has data
+    result = pg.execute(f"SELECT COUNT(*) FROM {table_name}").scalar()
+    
+    if result > 0:
+        logger.info(f"{table_name} table already contains {result} rows, skipping base data load")
+        return
+    
+    logger.info(f"Loading base data for {table_name}...")
+    
+    csv_path = os.path.abspath(f"base_data/{table_name}.csv")
+    
+    if not os.path.exists(csv_path):
+        logger.error(f"Base data file not found: {csv_path}")
+        raise FileNotFoundError(f"Base data file not found: {csv_path}")
+    
+    # Use raw connection for COPY command
+    raw_conn = pg.connection().connection
+    with raw_conn.cursor() as cursor:
+        with open(csv_path, 'r') as f:
+            # Skip header row and copy data
+            next(f)
+            cursor.copy_expert(
+                f"COPY {table_name} FROM STDIN WITH (FORMAT CSV)",
+                f
+            )
+    
+    logger.info(f"Base data loaded successfully for {table_name}!")
 
 
 # setup to easily create database sessions

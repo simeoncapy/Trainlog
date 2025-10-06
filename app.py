@@ -3919,6 +3919,13 @@ def current(username):
         **session["userinfo"],
     )
 
+@app.route("/<username>/getStats/<year>/<tripType>", methods=["GET", "POST"])
+@app.route("/<username>/getStats/<tripType>", methods=["GET", "POST"])
+@public_required
+def get_stats_api(username, tripType, year=None):
+    """JSON API endpoint for fetching stats"""
+    stats = fetch_stats(username, tripType, year)
+    return jsonify(stats)
 
 @app.route("/public/<username>/stats/<year>/<tripType>")
 @app.route("/public/<username>/stats/<tripType>")
@@ -3965,15 +3972,6 @@ def public_stats(username, tripType=None, year=None):
         **session["userinfo"],
     )
 
-
-@app.route("/<username>/getStats/<year>/<tripType>", methods=["GET", "POST"])
-@app.route("/<username>/getStats/<tripType>", methods=["GET", "POST"])
-@public_required
-def get_stats_api(username, tripType, year=None):
-    """JSON API endpoint for fetching stats"""
-    stats = fetch_stats(username, tripType, year)
-    return jsonify(stats)
-
 @app.route("/admin/stats/<tripType>")
 @app.route("/admin/stats/<year>/<tripType>")
 @app.route("/admin/stats")
@@ -3998,15 +3996,14 @@ def admin_stats(tripType=None, year=None):
 
     stats = fetch_stats(username, tripType, year)
     return render_template(
-        "stats.html",  # Use a different template for admin stats
+        "stats.html",
         nav="bootstrap/navigation.html",
-        username=getUser(),  # This will be None for admin
+        username=getUser(),
         statYear=year,
         logosList=listOperatorsLogos(),
         tripType=tripType,
         admin=True,
         statsData=jsonify(stats).json,
-        distinctTypes=types,
         distinctStatYears=distinctStatYears,
         **lang[session["userinfo"]["lang"]],
         **session["userinfo"],
