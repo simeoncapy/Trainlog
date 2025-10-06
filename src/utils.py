@@ -62,7 +62,6 @@ def owner_required(f):
 
     return decorated_function
 
-
 def getUser():
     return session.get("logged_in") if session.get("logged_in") else "public"
 
@@ -182,3 +181,38 @@ def sendOwnerEmail(subject, message):
         print(f"Email to: {address}\nSubject: {subject}\nMessage: {message}")
     else:
         sendEmail(address, subject, message)
+
+
+def listOperatorsLogos(tripType=None):
+    """
+    Return list of available logos for operators from the database.
+    If a tripType is provided, it will filter logos based on that type.
+    """
+    logo_types = {
+        "operator": "Operator",
+        "accommodation": "Accommodation",
+        "car": "Car",
+        "poi": "Point of Interest",
+    }
+
+    # Default to fetching all logo types if no tripType is specified
+    selected_types = logo_types.keys() if tripType is None else [tripType]
+
+    logoURLs = {}
+    with managed_cursor(mainConn) as cursor:
+        for logo_type in selected_types:
+            # Fetch logos based on operator_type field
+            cursor.execute(
+                """
+                SELECT o.short_name, l.logo_url
+                FROM operators o
+                JOIN operator_logos l ON o.uid = l.operator_id
+                WHERE o.operator_type = ?
+            """,
+                (logo_type,),
+            )
+
+            for row in cursor.fetchall():
+                logoURLs[row["short_name"]] = row["logo_url"]
+
+    return logoURLs

@@ -182,6 +182,7 @@ from src.api.leaderboards import _getLeaderboardUsers
 from src.api.news import news_blueprint
 from src.api.finance import finance_blueprint
 from src.api.carbon import carbon_blueprint
+from src.api.stats import stats_blueprint, fetch_stats
 from src.consts import DbNames, TripTypes
 from src.pg import setup_db
 from src.suspicious_activity import (
@@ -232,6 +233,7 @@ app.register_blueprint(feature_requests_blueprint)
 app.register_blueprint(finance_blueprint)
 app.register_blueprint(news_blueprint)
 app.register_blueprint(carbon_blueprint)
+app.register_blueprint(stats_blueprint)
 
 app.config["CACHE_TYPE"] = "SimpleCache"
 app.config["CACHE_DEFAULT_TIMEOUT"] = 864000
@@ -3964,6 +3966,86 @@ def public_stats(username, tripType=None, year=None):
     )
 
 
+@app.route("/<username>/getStats/<year>/<tripType>", methods=["GET", "POST"])
+@app.route("/<username>/getStats/<tripType>", methods=["GET", "POST"])
+@public_required
+def get_stats_api(username, tripType, year=None):
+    """JSON API endpoint for fetching stats"""
+    stats = fetch_stats(username, tripType, year)
+    return jsonify(stats)
+
+@app.route("/admin/stats/<tripType>")
+@app.route("/admin/stats/<year>/<tripType>")
+@app.route("/admin/stats")
+@owner_required
+def admin_stats(tripType=None, year=None):
+    username = None  # For admin, username is None
+    with managed_cursor(mainConn) as cursor:
+        cursor.execute(
+            "SELECT distinct type from trip WHERE type NOT IN ('poi', 'accommodation', 'restaurant')"
+        )
+        types = {
+            row[0]: lang[session["userinfo"]["lang"]][row[0]]
+            for row in cursor.fetchall()
+        }
+
+    if tripType is None:
+        return redirect(url_for("admin_stats", tripType="train", year=year))
+
+    distinctStatYears = getDistinctStatYears(username, tripType)
+    if year is not None and year not in distinctStatYears:
+        return redirect(url_for("admin_stats", tripType=tripType, year=None))
+
+    stats = fetch_stats(username, tripType, year)
+    return render_template(
+        "stats.html",  # Use a different template for admin stats
+        nav="bootstrap/navigation.html",
+        username=getUser(),  # This will be None for admin
+        statYear=year,
+        logosList=listOperatorsLogos(),
+        tripType=tripType,
+        admin=True,
+        statsData=jsonify(stats).json,
+        distinctTypes=types,
+        distinctStatYears=distinctStatYears,
+        **lang[session["userinfo"]["lang"]],
+        **session["userinfo"],
+    )
+
+
+@app.route("/<username>/stats/<year>/<tripType>")
+@app.route("/<username>/stats/<tripType>")
+@app.route("/<username>/stats")
+@login_required
+def stats(username, tripType=None, year=None):
+    if tripType is None:
+        return redirect(
+            url_for("stats", username=username, tripType="train", year=year)
+        )
+    distinctStatYears = getDistinctStatYears(username, tripType)
+    if year is not None and year not in distinctStatYears:
+        return redirect(
+            url_for("stats", username=username, tripType=tripType, year=None)
+        )
+
+    stats = fetch_stats(username, tripType, year)
+    return render_template(
+        "stats.html",
+        nav="bootstrap/navigation.html",
+        isCurrent=isCurrentTrip(username),
+        is_public=False,
+        title=lang[session["userinfo"]["lang"]]["stats"],
+        username=username,
+        statYear=year,
+        logosList=listOperatorsLogos(),
+        tripType=tripType,
+        statsData=jsonify(stats).json,
+        distinctStatYears=distinctStatYears,
+        **lang[session["userinfo"]["lang"]],
+        **session["userinfo"],
+    )
+
+
 @app.route("/privacy", defaults={"override_lang": None})
 @app.route("/privacy/<override_lang>")
 def privacy(override_lang):
@@ -5733,131 +5815,6 @@ def getMultiTrips(tripIds):
     return jsonify(sortedTripList, priceDict, colours)
 
 
-def fetch_stats(username, tripType, year=None):
-    stats = {}
-    with managed_cursor(mainConn) as cursor:
-        for avType in cursor.execute(typeAvailable, {"username": username}).fetchall():
-            if avType["type"] == tripType:
-                stats["operators"] = {
-                    "km": getStatsGeneral(
-                        query=statsOperatorKm,
-                        cursor=cursor,
-                        username=username,
-                        statName="operator",
-                        tripType=tripType,
-                        year=year,
-                    ),
-                    "trips": getStatsGeneral(
-                        query=statsOperatorTrips,
-                        cursor=cursor,
-                        username=username,
-                        statName="operator",
-                        tripType=tripType,
-                        year=year,
-                    ),
-                }
-                stats["material"] = {
-                    "km": getStatsGeneral(
-                        query=statsMaterialKm,
-                        cursor=cursor,
-                        username=username,
-                        statName="material",
-                        tripType=tripType,
-                        year=year,
-                    ),
-                    "trips": getStatsGeneral(
-                        query=statsMaterialTrips,
-                        cursor=cursor,
-                        username=username,
-                        statName="material",
-                        tripType=tripType,
-                        year=year,
-                    ),
-                }
-                stats["countries"] = {
-                    "km": getStatsCountries(
-                        query=statsCountries,
-                        cursor=cursor,
-                        username=username,
-                        km=True,
-                        tripType=tripType,
-                        year=year,
-                    ),
-                    "trips": getStatsCountries(
-                        query=statsCountries,
-                        cursor=cursor,
-                        username=username,
-                        km=False,
-                        tripType=tripType,
-                        year=year,
-                    ),
-                }
-                stats["years"] = {
-                    "km": getStatsYears(
-                        query=statsYearKm,
-                        cursor=cursor,
-                        username=username,
-                        lang=lang[session["userinfo"]["lang"]],
-                        tripType=tripType,
-                        year=year,
-                    ),
-                    "trips": getStatsYears(
-                        query=statsYearTrips,
-                        cursor=cursor,
-                        username=username,
-                        lang=lang[session["userinfo"]["lang"]],
-                        tripType=tripType,
-                        year=year,
-                    ),
-                }
-                stats["routes"] = {
-                    "km": getStatsGeneral(
-                        query=statsRoutesKm + " 10",
-                        cursor=cursor,
-                        username=username,
-                        statName="route",
-                        tripType=tripType,
-                        year=year,
-                    ),
-                    "trips": getStatsGeneral(
-                        query=statsRoutesTrips + " 10",
-                        cursor=cursor,
-                        username=username,
-                        statName="route",
-                        tripType=tripType,
-                        year=year,
-                    ),
-                }
-                stats["stations"] = {
-                    "km": getStatsGeneral(
-                        query=statsStationsKm + " 10",
-                        cursor=cursor,
-                        username=username,
-                        statName="station",
-                        tripType=tripType,
-                        year=year,
-                    ),
-                    "trips": getStatsGeneral(
-                        query=statsStationsTrips + " 10",
-                        cursor=cursor,
-                        username=username,
-                        statName="station",
-                        tripType=tripType,
-                        year=year,
-                    ),
-                }
-
-    return stats
-
-
-@app.route("/<username>/getStats/<year>/<tripType>", methods=["GET", "POST"])
-@app.route("/<username>/getStats/<tripType>", methods=["GET", "POST"])
-@public_required
-def getStats(username, tripType, year=None):
-    stats = fetch_stats(username, tripType, year)
-    return jsonify(stats)
-
-
 def getTrips(username, projects):
     tripList = []
     with managed_cursor(mainConn) as cursor:
@@ -6272,77 +6229,6 @@ def public_trips(username, time=None):
         **session["userinfo"],
     )
 
-
-@app.route("/admin/stats/<tripType>")
-@app.route("/admin/stats/<year>/<tripType>")
-@app.route("/admin/stats")
-@owner_required
-def admin_stats(tripType=None, year=None):
-    username = None  # For admin, username is None
-    with managed_cursor(mainConn) as cursor:
-        cursor.execute(
-            "SELECT distinct type from trip WHERE type NOT IN ('poi', 'accommodation', 'restaurant')"
-        )
-        types = {
-            row[0]: lang[session["userinfo"]["lang"]][row[0]]
-            for row in cursor.fetchall()
-        }
-
-    if tripType is None:
-        return redirect(url_for("admin_stats", tripType="train", year=year))
-
-    distinctStatYears = getDistinctStatYears(username, tripType)
-    if year is not None and year not in distinctStatYears:
-        return redirect(url_for("admin_stats", tripType=tripType, year=None))
-
-    stats = fetch_stats(username, tripType, year)
-    return render_template(
-        "stats.html",  # Use a different template for admin stats
-        nav="bootstrap/navigation.html",
-        username=getUser(),  # This will be None for admin
-        statYear=year,
-        logosList=listOperatorsLogos(),
-        tripType=tripType,
-        admin=True,
-        statsData=jsonify(stats).json,
-        distinctTypes=types,
-        distinctStatYears=distinctStatYears,
-        **lang[session["userinfo"]["lang"]],
-        **session["userinfo"],
-    )
-
-
-@app.route("/<username>/stats/<year>/<tripType>")
-@app.route("/<username>/stats/<tripType>")
-@app.route("/<username>/stats")
-@login_required
-def stats(username, tripType=None, year=None):
-    if tripType is None:
-        return redirect(
-            url_for("stats", username=username, tripType="train", year=year)
-        )
-    distinctStatYears = getDistinctStatYears(username, tripType)
-    if year is not None and year not in distinctStatYears:
-        return redirect(
-            url_for("stats", username=username, tripType=tripType, year=None)
-        )
-
-    stats = fetch_stats(username, tripType, year)
-    return render_template(
-        "stats.html",
-        nav="bootstrap/navigation.html",
-        isCurrent=isCurrentTrip(username),
-        is_public=False,
-        title=lang[session["userinfo"]["lang"]]["stats"],
-        username=username,
-        statYear=year,
-        logosList=listOperatorsLogos(),
-        tripType=tripType,
-        statsData=jsonify(stats).json,
-        distinctStatYears=distinctStatYears,
-        **lang[session["userinfo"]["lang"]],
-        **session["userinfo"],
-    )
 
 
 @app.route("/<username>/<edit_copy_type>/<tripId>")

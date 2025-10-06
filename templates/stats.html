@@ -135,8 +135,8 @@
 
     var tripType = "{{tripType}}";
     var yearDefined = "{{ 'true' if statYear is not none else 'false' }}";
-    var allUrl = '{{url_for("getStats", username=username, tripType="")}}' + tripType;
-    var yearUrl = '{{url_for("getStats", username=username, year=statYear, tripType="")}}' + tripType;
+    var allUrl = '{{url_for("get_stats_api", username=username, tripType="")}}' + tripType;
+    var yearUrl = '{{url_for("get_stats_api", username=username, year=statYear, tripType="")}}' + tripType;
     var urlToUse = yearDefined === "true" ? yearUrl : allUrl;
 
     var viewMode = 'trips'; // Default view mode

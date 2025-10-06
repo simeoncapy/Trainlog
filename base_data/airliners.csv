@@ -10,8 +10,8 @@ A321,Airbus,A321
 A330,Airbus,A330-300
 A332,Airbus,A330-200
 A333,Airbus,A330-300
-A338,Airbus,A330-800
-A339,Airbus,A330-900
+A338,Airbus,A330-800neo
+A339,Airbus,A330-900neo
 A340,Airbus,A340
 A342,Airbus,A340-200
 A343,Airbus,A340-300
@@ -82,11 +82,10 @@ E170,Embraer,E170
 E175,Embraer,E175
 E190,Embraer,E190
 E195,Embraer,E195
-E275,Embraer,E275
-E290,Embraer,E290
-E295,Embraer,E295
-E75L,Embraer,E75L
-E75S,Embraer,E75S
+E275,Embraer,E175-E2
+E290,Embraer,E190-E2
+E75L,Embraer,E175 (Long Wing)
+E75S,Embraer,E175 (Short Wing)
 F50,Fokker,F50
 F100,Fokker,F100
 MD82,McDonnell Douglas,MD-82
@@ -103,3 +102,4 @@ B757,Boeing,757
 B767,Boeing,767
 B717,Boeing,717
 B777,Boeing,777
+E295,Embraer,E195-E2
