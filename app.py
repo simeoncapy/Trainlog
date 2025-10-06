@@ -182,7 +182,7 @@ from src.api.leaderboards import _getLeaderboardUsers
 from src.api.news import news_blueprint
 from src.api.finance import finance_blueprint
 from src.api.carbon import carbon_blueprint
-from src.api.stats import stats_blueprint, fetch_stats
+from src.api.stats import stats_blueprint, fetch_stats_by_mode, get_distinct_stat_years
 from src.consts import DbNames, TripTypes
 from src.pg import setup_db
 from src.suspicious_activity import (
@@ -1046,17 +1046,6 @@ def formatTrip(trip, public=False):
 def user_exists(username):
     user = User.query.filter_by(username=username).first()
     return user is not None
-
-
-def getDistinctStatYears(username, tripType):
-    with managed_cursor(mainConn) as cursor:
-        return [
-            row[0]
-            for row in cursor.execute(
-                distinctStatYears, {"username": username, "tripType": tripType}
-            ).fetchall()
-        ]
-
 
 def saveManualStation(creator, name, lat, lng, station_type):
     if station_type in (
@@ -3919,12 +3908,24 @@ def current(username):
         **session["userinfo"],
     )
 
-@app.route("/<username>/getStats/<year>/<tripType>", methods=["GET", "POST"])
-@app.route("/<username>/getStats/<tripType>", methods=["GET", "POST"])
+@app.route("/<username>/getStats/<tripType>/<mode>", methods=["GET"])
+@app.route("/<username>/getStats/<year>/<tripType>/<mode>", methods=["GET"])
 @public_required
-def get_stats_api(username, tripType, year=None):
-    """JSON API endpoint for fetching stats"""
-    stats = fetch_stats(username, tripType, year)
+def get_stats_api(username, tripType, mode, year=None):
+    """JSON API endpoint for fetching stats (trips or km)"""
+    if mode not in ['trips', 'km']:
+        return jsonify({'error': 'Mode must be "trips" or "km"'}), 400
+    stats = fetch_stats_by_mode(username, tripType, year, mode=mode)
+    return jsonify(stats)
+
+@app.route("/admin/getStats/<tripType>/<mode>", methods=["GET"])
+@app.route("/admin/getStats/<year>/<tripType>/<mode>", methods=["GET"])
+@owner_required
+def get_admin_stats_api(tripType, mode, year=None):
+    """JSON API endpoint for fetching admin stats (trips or km)"""
+    if mode not in ['trips', 'km']:
+        return jsonify({'error': 'Mode must be "trips" or "km"'}), 400
+    stats = fetch_stats_by_mode(None, tripType, year, mode=mode)
     return jsonify(stats)
 
 @app.route("/public/<username>/stats/<year>/<tripType>")
@@ -3948,13 +3949,12 @@ def public_stats(username, tripType=None, year=None):
         return redirect(
             url_for("public_stats", username=username, tripType="train", year=year)
         )
-    distinctStatYears = getDistinctStatYears(username, tripType)
+    distinctStatYears = get_distinct_stat_years(username, tripType)
     if year is not None and year not in distinctStatYears:
         return redirect(
             url_for("stats", username=username, tripType=tripType, year=None)
         )
 
-    stats = fetch_stats(username, tripType, year)
     return render_template(
         "stats.html",
         nav="bootstrap/public_nav.html",
@@ -3965,19 +3965,18 @@ def public_stats(username, tripType=None, year=None):
         statYear=year,
         logosList=listOperatorsLogos(),
         tripType=tripType,
-        statsData=jsonify(stats).json,
         publicDistinctTypes=types,
         distinctStatYears=distinctStatYears,
         **lang[session["userinfo"]["lang"]],
         **session["userinfo"],
     )
 
+
 @app.route("/admin/stats/<tripType>")
 @app.route("/admin/stats/<year>/<tripType>")
 @app.route("/admin/stats")
 @owner_required
 def admin_stats(tripType=None, year=None):
-    username = None  # For admin, username is None
     with managed_cursor(mainConn) as cursor:
         cursor.execute(
             "SELECT distinct type from trip WHERE type NOT IN ('poi', 'accommodation', 'restaurant')"
@@ -3990,11 +3989,10 @@ def admin_stats(tripType=None, year=None):
     if tripType is None:
         return redirect(url_for("admin_stats", tripType="train", year=year))
 
-    distinctStatYears = getDistinctStatYears(username, tripType)
+    distinctStatYears = get_distinct_stat_years(None, tripType)  # Pass None for admin
     if year is not None and year not in distinctStatYears:
         return redirect(url_for("admin_stats", tripType=tripType, year=None))
 
-    stats = fetch_stats(username, tripType, year)
     return render_template(
         "stats.html",
         nav="bootstrap/navigation.html",
@@ -4003,7 +4001,6 @@ def admin_stats(tripType=None, year=None):
         logosList=listOperatorsLogos(),
         tripType=tripType,
         admin=True,
-        statsData=jsonify(stats).json,
         distinctStatYears=distinctStatYears,
         **lang[session["userinfo"]["lang"]],
         **session["userinfo"],
@@ -4019,13 +4016,12 @@ def stats(username, tripType=None, year=None):
         return redirect(
             url_for("stats", username=username, tripType="train", year=year)
         )
-    distinctStatYears = getDistinctStatYears(username, tripType)
+    distinctStatYears = get_distinct_stat_years(username, tripType)
     if year is not None and year not in distinctStatYears:
         return redirect(
             url_for("stats", username=username, tripType=tripType, year=None)
         )
 
-    stats = fetch_stats(username, tripType, year)
     return render_template(
         "stats.html",
         nav="bootstrap/navigation.html",
@@ -4036,7 +4032,6 @@ def stats(username, tripType=None, year=None):
         statYear=year,
         logosList=listOperatorsLogos(),
         tripType=tripType,
-        statsData=jsonify(stats).json,
         distinctStatYears=distinctStatYears,
         **lang[session["userinfo"]["lang"]],
         **session["userinfo"],

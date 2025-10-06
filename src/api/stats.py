@@ -33,21 +33,6 @@ def get_stats_general(pg, query_func, user_id, stat_name, trip_type, year=None):
     return stats
 
 
-def get_podiumized_stats(pg, query_func, user_id, stat_name, trip_type, year=None):
-    """Get stats arranged for podium display (1st, 2nd, 3rd)"""
-    raw_stats = get_stats_general(pg, query_func, user_id, stat_name, trip_type, year)
-    
-    for index, stat in enumerate(raw_stats):
-        raw_stats[index]["height"] = len(raw_stats) - index
-
-    stats = []
-    if len(raw_stats) == 3:
-        stats.append(raw_stats[1])  # 2nd place
-        stats.append(raw_stats[0])  # 1st place
-        stats.append(raw_stats[2])  # 3rd place
-    return stats
-
-
 def get_stats_countries(pg, query_func, user_id, km, trip_type, year=None):
     """Process country statistics with past/future breakdown"""
     result = pg.execute(
@@ -191,13 +176,18 @@ def get_stats_years(pg, query_func, user_id, lang, trip_type, year=None):
     return years
 
 
-def fetch_stats(username, trip_type, year=None):
-    """Fetch all statistics for a user and trip type"""
+def fetch_stats_by_mode(username, trip_type, year=None, mode='trips'):
+    """
+    Fetch statistics for a specific mode (trips or km)
+    If username is None, fetch stats for all users (admin mode)
+    """
     stats = {}
-    user_id = get_user_id(username)
+    
+    # Handle admin case - use None as user_id to get all users
+    user_id = None if username is None else get_user_id(username)
     
     with pg_session() as pg:
-        # Check if trip type is available for user
+        # Check if trip type is available for user (or any user if admin)
         available_types = pg.execute(
             stats_sql.type_available(),
             {"user_id": user_id}
@@ -205,130 +195,128 @@ def fetch_stats(username, trip_type, year=None):
         
         type_exists = any(row[0] == trip_type for row in available_types)
         
-        if type_exists:
-            user_lang = session.get("userinfo", {}).get("lang", "en")
-            lang_dict = lang.get(user_lang, {})
+        if not type_exists:
+            return stats
             
-            stats["operators"] = {
-                "km": get_stats_general(
-                    pg=pg,
-                    query_func=stats_sql.stats_operator_km,
-                    user_id=user_id,
-                    stat_name="operator",
-                    trip_type=trip_type,
-                    year=year,
-                ),
-                "trips": get_stats_general(
-                    pg=pg,
-                    query_func=stats_sql.stats_operator_trips,
-                    user_id=user_id,
-                    stat_name="operator",
-                    trip_type=trip_type,
-                    year=year,
-                ),
-            }
+        user_lang = session.get("userinfo", {}).get("lang", "en")
+        lang_dict = lang.get(user_lang, {})
+        
+        if mode == 'km':
+            stats["operators"] = get_stats_general(
+                pg=pg,
+                query_func=stats_sql.stats_operator_km,
+                user_id=user_id,
+                stat_name="operator",
+                trip_type=trip_type,
+                year=year,
+            )
             
-            stats["material"] = {
-                "km": get_stats_general(
-                    pg=pg,
-                    query_func=stats_sql.stats_material_km,
-                    user_id=user_id,
-                    stat_name="material",
-                    trip_type=trip_type,
-                    year=year,
-                ),
-                "trips": get_stats_general(
-                    pg=pg,
-                    query_func=stats_sql.stats_material_trips,
-                    user_id=user_id,
-                    stat_name="material",
-                    trip_type=trip_type,
-                    year=year,
-                ),
-            }
+            stats["material"] = get_stats_general(
+                pg=pg,
+                query_func=stats_sql.stats_material_km,
+                user_id=user_id,
+                stat_name="material",
+                trip_type=trip_type,
+                year=year,
+            )
             
-            stats["countries"] = {
-                "km": get_stats_countries(
-                    pg=pg,
-                    query_func=stats_sql.stats_countries,
-                    user_id=user_id,
-                    km=True,
-                    trip_type=trip_type,
-                    year=year,
-                ),
-                "trips": get_stats_countries(
-                    pg=pg,
-                    query_func=stats_sql.stats_countries,
-                    user_id=user_id,
-                    km=False,
-                    trip_type=trip_type,
-                    year=year,
-                ),
-            }
+            stats["countries"] = get_stats_countries(
+                pg=pg,
+                query_func=stats_sql.stats_countries,
+                user_id=user_id,
+                km=True,
+                trip_type=trip_type,
+                year=year,
+            )
             
-            stats["years"] = {
-                "km": get_stats_years(
-                    pg=pg,
-                    query_func=stats_sql.stats_year_km,
-                    user_id=user_id,
-                    lang=lang_dict,
-                    trip_type=trip_type,
-                    year=year,
-                ),
-                "trips": get_stats_years(
-                    pg=pg,
-                    query_func=stats_sql.stats_year_trips,
-                    user_id=user_id,
-                    lang=lang_dict,
-                    trip_type=trip_type,
-                    year=year,
-                ),
-            }
+            stats["years"] = get_stats_years(
+                pg=pg,
+                query_func=stats_sql.stats_year_km,
+                user_id=user_id,
+                lang=lang_dict,
+                trip_type=trip_type,
+                year=year,
+            )
             
-            stats["routes"] = {
-                "km": get_stats_general(
-                    pg=pg,
-                    query_func=stats_sql.stats_routes_km,
-                    user_id=user_id,
-                    stat_name="route",
-                    trip_type=trip_type,
-                    year=year,
-                ),
-                "trips": get_stats_general(
-                    pg=pg,
-                    query_func=stats_sql.stats_routes_trips,
-                    user_id=user_id,
-                    stat_name="route",
-                    trip_type=trip_type,
-                    year=year,
-                ),
-            }
+            stats["routes"] = get_stats_general(
+                pg=pg,
+                query_func=stats_sql.stats_routes_km,
+                user_id=user_id,
+                stat_name="route",
+                trip_type=trip_type,
+                year=year,
+            )
             
-            stats["stations"] = {
-                "km": get_stats_general(
-                    pg=pg,
-                    query_func=stats_sql.stats_stations_km,
-                    user_id=user_id,
-                    stat_name="station",
-                    trip_type=trip_type,
-                    year=year,
-                ),
-                "trips": get_stats_general(
-                    pg=pg,
-                    query_func=stats_sql.stats_stations_trips,
-                    user_id=user_id,
-                    stat_name="station",
-                    trip_type=trip_type,
-                    year=year,
-                ),
-            }
+            stats["stations"] = get_stats_general(
+                pg=pg,
+                query_func=stats_sql.stats_stations_km,
+                user_id=user_id,
+                stat_name="station",
+                trip_type=trip_type,
+                year=year,
+            )
+        else:  # mode == 'trips'
+            stats["operators"] = get_stats_general(
+                pg=pg,
+                query_func=stats_sql.stats_operator_trips,
+                user_id=user_id,
+                stat_name="operator",
+                trip_type=trip_type,
+                year=year,
+            )
+            
+            stats["material"] = get_stats_general(
+                pg=pg,
+                query_func=stats_sql.stats_material_trips,
+                user_id=user_id,
+                stat_name="material",
+                trip_type=trip_type,
+                year=year,
+            )
+            
+            stats["countries"] = get_stats_countries(
+                pg=pg,
+                query_func=stats_sql.stats_countries,
+                user_id=user_id,
+                km=False,
+                trip_type=trip_type,
+                year=year,
+            )
+            
+            stats["years"] = get_stats_years(
+                pg=pg,
+                query_func=stats_sql.stats_year_trips,
+                user_id=user_id,
+                lang=lang_dict,
+                trip_type=trip_type,
+                year=year,
+            )
+            
+            stats["routes"] = get_stats_general(
+                pg=pg,
+                query_func=stats_sql.stats_routes_trips,
+                user_id=user_id,
+                stat_name="route",
+                trip_type=trip_type,
+                year=year,
+            )
+            
+            stats["stations"] = get_stats_general(
+                pg=pg,
+                query_func=stats_sql.stats_stations_trips,
+                user_id=user_id,
+                stat_name="station",
+                trip_type=trip_type,
+                year=year,
+            )
 
     return stats
 
 
 def get_distinct_stat_years(username, trip_type):
     """Get list of years with statistics available"""
-    user_id = get_user_id(username)
+    user_id = None if username is None else get_user_id(username)
+    
     with pg_session() as pg:
         result = pg.execute(
             stats_sql.distinct_stat_years(),

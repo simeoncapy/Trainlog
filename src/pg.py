@@ -13,9 +13,52 @@ from src.consts import Env
 logger = logging.getLogger(__name__)
 threadlocal = threading.local()
 
+# Global variables - will be initialized after fork
+pg_session_engine = None
+Session = None
+_setup_complete = False
+
+
+def get_db_connection_string():
+    """
+    Get db credentials from environment variables
+
+    Raise an exception if they can't be found
+    """
+    pg_host = os.environ["POSTGRES_HOST"]
+    pg_port = os.environ["POSTGRES_PORT"]
+    pg_db = os.environ["POSTGRES_DB"]
+    pg_user = os.environ["POSTGRES_USER"]
+    pg_password = os.environ["POSTGRES_PASSWORD"]
+
+    return f"postgresql+psycopg2://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_db}"
+
+
+def init_db_engine():
+    """
+    Initialize the database engine and session maker.
+    This should be called after forking to ensure each worker has its own connection pool.
+    """
+    global pg_session_engine, Session
+    
+    if pg_session_engine is None:
+        logger.info(f"Initializing database engine for process {os.getpid()}")
+        pg_session_engine = create_engine(
+            get_db_connection_string(),
+            pool_pre_ping=True,  # Verify connections before using them
+            pool_recycle=3600,   # Recycle connections after 1 hour
+            pool_size=5,         # Connections per worker
+            max_overflow=10,     # Additional connections if needed
+        )
+        Session = sessionmaker(bind=pg_session_engine)
+        logger.info(f"Database engine initialized for process {os.getpid()}")
+
 
 @contextmanager
 def pg_session():
+    # Ensure engine is initialized (handles both preload and non-preload cases)
+    init_db_engine()
+    
     # prevent nested sessions to avoid difficult bugs
     if getattr(threadlocal, "inside_pg_session", False):
         raise Exception("Cannot open a pg session while already in a pg session")
@@ -69,7 +112,19 @@ def setup_db():
 
     This means running schema.sql if necessary (not in prod though) and running any
     migrations that have not been applied yet.
+    
+    This should be called BEFORE workers are forked (in master process with --preload)
+    or in each worker if not using --preload.
     """
+    global _setup_complete
+    
+    # Prevent running setup multiple times
+    if _setup_complete:
+        logger.info(f"Database setup already complete, skipping in process {os.getpid()}")
+        return
+    
+    logger.info(f"Running database setup in process {os.getpid()}")
+    
     if not db_exists():
         logger.info("Database was detected to be empty")
         # check the current environment; in production, raise an error
@@ -94,6 +149,16 @@ def setup_db():
         for m in migrations:
             apply_migration(session, m)
         load_base_data(session, "airliners")
+    
+    # Dispose the engine used during setup - workers will create their own
+    global pg_session_engine
+    if pg_session_engine is not None:
+        logger.info(f"Disposing setup engine in process {os.getpid()}")
+        pg_session_engine.dispose()
+        pg_session_engine = None
+    
+    _setup_complete = True
+    logger.info(f"Database setup complete in process {os.getpid()}")
 
 
 def list_migrations_to_apply():
@@ -147,20 +212,6 @@ def db_exists():
         return pg.execute(sql.db_exists()).scalar()
 
 
-def get_db_connection_string():
-    """
-    Get db credentials from environment variables
-
-    Raise an exception if they can't be found
-    """
-    pg_host = os.environ["POSTGRES_HOST"]
-    pg_port = os.environ["POSTGRES_PORT"]
-    pg_db = os.environ["POSTGRES_DB"]
-    pg_user = os.environ["POSTGRES_USER"]
-    pg_password = os.environ["POSTGRES_PASSWORD"]
-
-    return f"postgresql+psycopg2://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_db}"
-
 def load_base_data(pg, table_name):
     """
     Load base data from CSV files into the database using COPY.
@@ -197,8 +248,3 @@ def load_base_data(pg, table_name):
             )
     
     logger.info(f"Base data loaded successfully for {table_name}!")
-
-
-# setup to easily create database sessions
-pg_session_engine = create_engine(get_db_connection_string())
-Session = sessionmaker(bind=pg_session_engine)
