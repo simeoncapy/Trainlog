@@ -562,6 +562,7 @@ var table = $('#tripRows');
     var tableObject = $('#dataTable').DataTable({
     processing: true,
     serverSide: true,
+    pageJump:true,
     scrollY: scroll == true ? $(window).height() - 300 : null,
     scroller: scroll,
     dom: '<"toolbar">lfrtip',
@@ -662,6 +663,7 @@ var table = $('#tripRows');
         style: 'multi+shift',
         selector: 'td:not(:nth-child(2)):not(:last-child):not(:first-child)'
     },
+    initComplete: function(){addPageJumpInput();},
     rowId: function(a) {
         return a.id;
     },
@@ -686,6 +688,7 @@ var table = $('#tripRows');
     });
     resetObjects();
     updateSelectionMessage();
+    addPageJumpInput();
 }).on('select', function(e, dt, type, indexes) {
     var selectedRows = tableObject.rows(indexes).data().toArray();
     selectedRows.forEach(function(row) {
@@ -1130,6 +1133,32 @@ $('#submitBtn').on('click', function() {
         }, 100);
     });
 
+    function addPageJumpInput() {
+        // Only add if it doesn't already exist
+        if ($('.dataTables_paginate input.page-jump-input').length === 0) {
+            $('<input type="number" placeholder="#" class="form-control page-jump-input" style="width: 70px; margin-left: 10px; display: inline-block;" min="1">')
+                .appendTo($('.dataTables_paginate'))
+                .on('keyup blur', function(e) {
+                    if (e.type === 'keyup' && e.key !== 'Enter') return;
+                    if (!this.value) return;
+                    
+                    var pageNum = parseInt(this.value);
+                    var info = tableObject.page.info();
+                    
+                    if (isNaN(pageNum)) return;
+                    
+                    // Clamp to valid range
+                    if (pageNum < 1) {
+                        pageNum = 1;
+                    } else if (pageNum > info.pages) {
+                        pageNum = info.pages;
+                    }
+                    
+                    tableObject.page(pageNum - 1).draw('page');
+                    $(this).val(''); // Clear input after jumping
+                });
+        }
+    }
 </script>
 
 {% endblock %}
