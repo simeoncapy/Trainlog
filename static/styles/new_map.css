@@ -91,7 +91,7 @@
 .control-toggle {
     position: absolute;
     top: 20px;
-    right: -40px;
+    right: -36px;
     background: var(--bg-primary);
     border: none;
     border-radius: 0 8px 8px 0;
@@ -601,5 +601,5 @@
 }
 
 .mapUser {
-    height: calc(100% - 56px);
+    height: calc(100% - 58px);
 }
