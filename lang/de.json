@@ -620,5 +620,6 @@
     "useOldRouter": "Zum klassischen Routingsystem wechseln",
     "useNewRouter": "Neuen Router ausprobieren (zeigt Elektrifizierung)",
     "news": "Trainlog-Nachrichten",
-    "CO2": "CO₂e"
+    "CO2": "CO₂e",
+    "donate": "Kauf mir einen Kaffee"
 }

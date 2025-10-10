@@ -620,5 +620,6 @@
     "useOldRouter": "Passa al motore di routing classico",
     "useNewRouter": "Prova il nuovo router (mostra l'elettrificazione)",
     "news": "Notizie Trainlog",
-    "CO2": "CO₂e"
+    "CO2": "CO₂e",
+    "donate": "Comprami un caffè"
 }

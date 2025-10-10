@@ -620,5 +620,6 @@
     "useOldRouter": "Byt till klassisk routingmotor",
     "useNewRouter": "Prova ny router (visar elektrifiering)",
     "news": "Trainlog Nyheter",
-    "CO2": "CO₂e"
+    "CO2": "CO₂e",
+    "donate": "Köp mig en kaffe"
 }

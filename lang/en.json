@@ -620,5 +620,6 @@
     "useOldRouter": "Switch to classic routing engine",
     "useNewRouter": "Try new router (shows electrification)",
     "news": "Trainlog News",
-    "CO2": "CO₂e"
+    "CO2": "CO₂e",
+    "donate": "Buy me a coffee"
 }
