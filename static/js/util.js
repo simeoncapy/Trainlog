@@ -188,6 +188,60 @@ function secondsToDhm(seconds, locale, style="narrow") {
     }).format(duration);
   }
 
+function formatDurationAxis(seconds, lang) {
+    
+    // Define time units in seconds
+    const YEAR = 365.25 * 24 * 3600;
+    const MONTH = 30.44 * 24 * 3600;
+    const DAY = 24 * 3600;
+    const HOUR = 3600;
+    const MINUTE = 60;
+    
+    let value, unit;
+    
+    // Determine the most appropriate unit
+    if (seconds >= YEAR) {
+        value = seconds / YEAR;
+        unit = 'year';
+    } else if (seconds >= MONTH) {
+        value = seconds / MONTH;
+        unit = 'month';
+    } else if (seconds >= DAY) {
+        value = seconds / DAY;
+        unit = 'day';
+    } else if (seconds >= HOUR) {
+        value = seconds / HOUR;
+        unit = 'hour';
+    } else {
+        value = seconds / MINUTE;
+        unit = 'minute';
+    }
+    
+    // Round the value appropriately
+    const roundedValue = value >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
+    
+    // For axis labels, use short format
+    try {
+        const formatter = new Intl.NumberFormat(lang, {
+            style: 'unit',
+            unit: unit,
+            unitDisplay: 'short',
+            maximumFractionDigits: roundedValue >= 10 ? 0 : 1
+        });
+        return formatter.format(roundedValue);
+    } catch (e) {
+        // Fallback if unit formatting not supported
+        const unitShort = {
+            'year': 'y',
+            'month': 'mo',
+            'day': 'd',
+            'hour': 'h',
+            'minute': 'm'
+        };
+        return roundedValue + unitShort[unit];
+    }
+}
+
 function getGetParams(){
   queryString = window.location.search;
   return new URLSearchParams(queryString);

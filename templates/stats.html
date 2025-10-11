@@ -418,6 +418,9 @@
             type: 'value',
             axisLabel: {
                 formatter: function (value) {
+                    if (currentMetric === 'duration') {
+                        return formatDurationAxis(value, "{{langId}}");
+                    }
                     return value >= 1000 ? (value / 1000) + 'k' : value;
                 }
             }
@@ -722,6 +725,9 @@
                 type: 'value',
                 axisLabel: {
                     formatter: function (value) {
+                        if (currentMetric === 'duration') {
+                            return formatDurationAxis(value, "{{langId}}");
+                        }
                         return value >= 1000 ? (value / 1000) + 'k' : value;
                     }
                 }
@@ -756,6 +762,9 @@
                 type: 'value',
                 axisLabel: {
                     formatter: function (value) {
+                        if (currentMetric === 'duration') {
+                            return formatDurationAxis(value, "{{langId}}");
+                        }
                         return value >= 1000 ? (value / 1000) + 'k' : value;
                     }
                 }
