@@ -38,7 +38,7 @@ def _getLeaderboardUsers(type, User):
                 total_carbon = row[1]
                 total_distance = row[2]
                 trips = row[3]
-                last_modified = row[4]
+                last_modified = row[4].replace(day=1).date() if row[4] else None
                 
                 if user_id in user_dict:
                     user_dict[user_id]["total_carbon"] = float(total_carbon) if total_carbon else 0
@@ -82,7 +82,7 @@ def _getLeaderboardUsers(type, User):
                 trip_type = row[1]
                 trips = row[2]
                 length = row[3]
-                last_modified = row[4]
+                last_modified = row[4].replace(day=1).date() if row[4] else None
                
                 if user_id in user_dict and type == trip_type:
                     user_dict[user_id]["trips"] = trips

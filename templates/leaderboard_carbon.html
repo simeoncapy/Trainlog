@@ -107,9 +107,14 @@ $.get('{{url_for("getLeaderboardUsers", type="carbon")}}', function(users, statu
                 .append($('<td>').attr('data-sort', user.carbon_per_km).html(withTooltip(perKmFmt.display, perKmFmt.tooltip)))
                 .append(
                     user.last_modified ?
-                        $('<td>').attr('data-sort', user.last_modified).text(formatDate(user.last_modified))
-                    :   $('<td>')
-                )
+                        $('<td>').attr("data-sort", user.last_modified).text(
+                        (() => {
+                            const formatted = new Intl.DateTimeFormat('{{langId}}', { year: 'numeric', month: 'long' }).format(new Date(user.last_modified));
+                            return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+                        })()
+                        )
+                        : $('<td>')
+                    )
         );
     });
 

@@ -70,12 +70,15 @@ $.get('{{url_for("getLeaderboardUsers", type=type)}}', function(users, status){
             .append($('<td>').attr("data-sort", user.trips).text(user.trips.toLocaleString()))
             .append($('<td>').attr("data-sort", user.length).text(mToKm(user.length).toLocaleString() + " km"))
             .append(
-                user.last_modified ? 
+                user.last_modified ?
                     $('<td>').attr("data-sort", user.last_modified).text(
-                        new Intl.DateTimeFormat('en-IE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(user.last_modified))
-                    ) 
-                : $('<td>')
-            )
+                    (() => {
+                        const formatted = new Intl.DateTimeFormat('{{langId}}', { year: 'numeric', month: 'long' }).format(new Date(user.last_modified));
+                        return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+                    })()
+                    )
+                    : $('<td>')
+                )
         )
     });
 
