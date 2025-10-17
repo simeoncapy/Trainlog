@@ -6,7 +6,6 @@
         origin_station AS station, 
         is_past, 
         is_planned_future, 
-        is_future,
         trip_length,
         trip_duration,
         carbon
@@ -16,7 +15,6 @@
         destination_station AS station, 
         is_past, 
         is_planned_future, 
-        is_future,
         trip_length,
         trip_duration,
         carbon
@@ -26,7 +24,7 @@ SELECT
     station,
     SUM(is_past) AS "pastTrips",
     SUM(is_planned_future) AS "plannedFutureTrips",
-    SUM(is_past + is_planned_future + is_future) AS "count",
+    SUM(is_past + is_planned_future) AS "count",
     SUM(trip_length * is_past) AS "pastKm",
     SUM(trip_length * is_planned_future) AS "plannedFutureKm",
     SUM(trip_duration * is_past) AS "pastDuration",
@@ -36,4 +34,4 @@ SELECT
 FROM stations
 GROUP BY station
 ORDER BY count DESC
-LIMIT 10;
+LIMIT 10000;

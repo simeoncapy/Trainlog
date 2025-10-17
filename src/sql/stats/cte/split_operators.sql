@@ -12,7 +12,7 @@ WITH RECURSIVE operator_split AS (
             WHEN POSITION(',' IN operator) > 0 THEN TRIM(SUBSTRING(operator FROM POSITION(',' IN operator) + 1))
             ELSE NULL
         END AS rest,
-        trip_length, is_past, is_planned_future, is_future, is_project, trip_duration, carbon
+        trip_length, is_past, is_planned_future, is_project, trip_duration, carbon
     FROM time_categories
     WHERE is_project IS FALSE
     
@@ -30,7 +30,7 @@ WITH RECURSIVE operator_split AS (
             WHEN POSITION(',' IN rest) > 0 THEN TRIM(SUBSTRING(rest FROM POSITION(',' IN rest) + 1))
             ELSE NULL
         END,
-        trip_length, is_past, is_planned_future, is_future, is_project, trip_duration, carbon
+        trip_length, is_past, is_planned_future, is_project, trip_duration, carbon
     FROM operator_split
     WHERE rest IS NOT NULL AND TRIM(rest) != ''
 )
