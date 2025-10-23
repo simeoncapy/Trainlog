@@ -621,5 +621,6 @@
     "useNewRouter": "Wypróbuj nowy router (pokazuje elektryfikację)",
     "news": "Wiadomości Trainlog",
     "CO2": "CO₂e",
-    "donate": "Kup mi kawę"
+    "donate": "Kup mi kawę",
+    "data_migration_message": "Migracja bazy danych jest w toku. Operacje zapisu są tymczasowo wyłączone."
 }

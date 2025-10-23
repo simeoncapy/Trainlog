@@ -621,5 +621,6 @@
     "useNewRouter": "尝试新路由器（显示电气化）",
     "news": "Trainlog 新闻",
     "CO2": "CO₂e",
-    "donate": "请给我买杯咖啡"
+    "donate": "请给我买杯咖啡",
+    "data_migration_message": "数据库迁移正在进行中。写入操作暂时被禁用。"
 }

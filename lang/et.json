@@ -621,5 +621,6 @@
     "useNewRouter": "Proovi uut ruuterit (kuvab elektrifitseerimist)",
     "news": "Trainlog Uudised",
     "CO2": "CO₂e",
-    "donate": "Osta mulle kohv"
+    "donate": "Osta mulle kohv",
+    "data_migration_message": "Andmebaasi migratsioon on pooleli. Kirjutustoimingud on ajutiselt keelatud."
 }

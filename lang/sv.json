@@ -621,5 +621,6 @@
     "useNewRouter": "Prova ny router (visar elektrifiering)",
     "news": "Trainlog Nyheter",
     "CO2": "CO₂e",
-    "donate": "Köp mig en kaffe"
+    "donate": "Köp mig en kaffe",
+    "data_migration_message": "En databasöverföring pågår. Skrivoperationer är tillfälligt inaktiverade."
 }

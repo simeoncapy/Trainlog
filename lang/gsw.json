@@ -621,5 +621,6 @@
     "useNewRouter": "Probieret nejer Router (zeigt Elektrifizierung)",
     "news": "Trainlog-Nachrichte",
     "CO2": "CO₂e",
-    "donate": "Chauf mier es Kaffee"
+    "donate": "Chauf mier es Kaffee",
+    "data_migration_message": "E Datenbank-Migration isch im Gang. Schreiboperatione sind vorüübergehend deaktiviert."
 }

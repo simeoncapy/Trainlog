@@ -621,5 +621,6 @@
     "useNewRouter": "Try new router (shows electrification)",
     "news": "Trainlog News",
     "CO2": "CO₂e",
-    "donate": "Buy me a coffee"
+    "donate": "Buy me a coffee",
+    "data_migration_message": "A database migration is in progress. Write operations are temporarily disabled."
 }

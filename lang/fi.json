@@ -621,5 +621,6 @@
     "useNewRouter": "Kokeile uutta reititintä (näyttää sähköistyksen)",
     "news": "Trainlog-uutiset",
     "CO2": "CO₂e",
-    "donate": "Osta minulle kahvi"
+    "donate": "Osta minulle kahvi",
+    "data_migration_message": "Tietokannan siirto on käynnissä. Kirjoitustoiminnot ovat väliaikaisesti pois käytöstä."
 }

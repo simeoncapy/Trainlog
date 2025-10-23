@@ -4,10 +4,14 @@ import json
 import logging
 import logging.config
 import sqlite3
+import os
+from pathlib import Path
+
 
 from src.pg import get_or_create_pg_session, pg_session
 from src.trips import Trip, compare_trip, parse_date
 from src.utils import get_user_id, mainConn, pathConn, managed_cursor
+from src.carbon import calculate_carbon_footprint_for_trip
 from sqlalchemy import text
 
 logging.config.fileConfig("logging.conf", disable_existing_loggers=False)
@@ -17,13 +21,55 @@ logger = logging.getLogger(__name__)
 def sync_db_from_sqlite():
     """
     Sync the PostgreSQL database with the SQLite database.
+    Syncs trips, paths, and calculates carbon footprints.
+   
+    Uses IMMEDIATE locks on SQLite to completely prevent writes during sync.
+    Uses SHARE mode locks on PostgreSQL to allow reads but prevent writes.
+    Creates a lock file to signal the app that sync is in progress.
     """
-
     logger.info("Syncing SQLite database with PostgreSQL...")
-    with pg_session() as pg:
-        sync_trips_from_sqlite(pg)
-        sync_paths_from_sqlite(pg)
-
+    
+    # Define lock file path
+    lock_file = Path("db_sync.lock")  # Or use a path relevant to your app
+    
+    try:
+        # Create lock file to signal sync in progress
+        logger.info("Creating lock file...")
+        lock_file.write_text(f"locked_at={os.getpid()}:{__import__('time').time()}")
+        logger.info(f"Lock file created at: {lock_file}")
+        
+        # Lock SQLite databases with IMMEDIATE lock - blocks ALL writes
+        logger.info("Acquiring IMMEDIATE locks on SQLite databases...")
+        mainConn.isolation_level = None  # autocommit off
+        mainConn.execute("BEGIN IMMEDIATE")
+        pathConn.isolation_level = None
+        pathConn.execute("BEGIN IMMEDIATE")
+        logger.info("SQLite databases locked - reads allowed for this connection, ALL writes blocked")
+       
+        try:
+            with pg_session() as pg:
+                # Acquire SHARE locks on PG tables - allows reads, blocks writes
+                logger.info("Acquiring PostgreSQL table locks...")
+                pg.execute(text("LOCK TABLE trips IN SHARE MODE"))
+                pg.execute(text("LOCK TABLE paths IN SHARE MODE"))
+                logger.info("PostgreSQL tables locked - reads allowed, writes blocked")
+               
+                sync_trips_from_sqlite(pg)
+                sync_paths_from_sqlite(pg)
+                backfill_carbon_for_all_trips(pg)
+               
+                # Locks are automatically released when transaction commits
+                logger.info("Sync complete - releasing locks")
+        finally:
+            # Release SQLite locks
+            mainConn.rollback()
+            pathConn.rollback()
+            logger.info("SQLite locks released")
+    finally:
+        # Always remove lock file, even if sync fails
+        if lock_file.exists():
+            lock_file.unlink()
+            logger.info("Lock file removed")
 
 def trip_to_csv(trip: Trip):
     items = [
@@ -182,72 +228,63 @@ def sync_paths_from_sqlite(pg_session=None):
     """
     logger.info("Syncing paths from SQLite to PostgreSQL...")
     
-    try:
-        # Get all paths from SQLite
-        cursor = pathConn.cursor()
-        cursor.execute("SELECT count(*) FROM paths")
-        num_paths = cursor.fetchone()[0]
-        logger.info(f"Syncing {num_paths} paths from SQLite to PostgreSQL")
-        
-        cursor.execute("SELECT trip_id, path FROM paths ORDER BY trip_id")
-        sqlite_paths = cursor.fetchall()
-        
-        with get_or_create_pg_session(pg_session) as pg:
-            # Delete existing paths
-            logger.info("Deleting existing paths in pg...")
-            pg.execute("DELETE FROM paths;")
-            
-            # Prepare batch insert
-            batch_size = 1000
-            batch = []
-            
-            for i, row in enumerate(sqlite_paths):
-                if i % 10000 == 0:
-                    logger.info(f"Converting path {i}/{num_paths}")
-                
-                trip_id = row['trip_id']
-                path_str = row['path']
-                
-                # Convert [[X,Y],[X,Y]] string to WKT LINESTRING
-                try:
-                    # Parse the string representation of the coordinates
-                    coordinates = json.loads(path_str)
-                    
-                    if coordinates:
-                        if len(coordinates) >= 2:
-                            # Create WKT LINESTRING format
-                            wkt_coords = ', '.join([f"{lon} {lat}" for lon, lat in coordinates])
-                            wkt = f"LINESTRING({wkt_coords})"
-                        elif len(coordinates) == 1:
-                            lon, lat = coordinates[0]
-                            wkt = f"POINT({lon} {lat})"
-                        else:
-                            logger.warning(f"Trip {trip_id} has empty coordinate list: {path_str}")
-                            continue
-
-                        batch.append((trip_id, wkt))
-
-                        # Insert in batches
-                        if len(batch) >= batch_size:
-                            insert_paths_batch(pg, batch)
-                            batch = []
-                    else:
-                        logger.warning(f"Trip {trip_id} has invalid path: {path_str}")
-
-                        
-                except (json.JSONDecodeError, ValueError) as e:
-                    logger.error(f"Failed to parse path for trip {trip_id}: {e}")
-                    continue
-            
-            # Insert remaining paths
-            if batch:
-                insert_paths_batch(pg, batch)
-                
-            pg.commit()
-            
-    finally:
-        pathConn.close()
+    # Get all paths from SQLite
+    cursor = pathConn.cursor()
+    cursor.execute("SELECT count(*) FROM paths")
+    num_paths = cursor.fetchone()[0]
+    logger.info(f"Syncing {num_paths} paths from SQLite to PostgreSQL")
     
+    cursor.execute("SELECT trip_id, path FROM paths ORDER BY trip_id")
+    sqlite_paths = cursor.fetchall()
+    
+    with get_or_create_pg_session(pg_session) as pg:
+        # Prepare batch insert
+        batch_size = 1000
+        batch = []
+        
+        for i, row in enumerate(sqlite_paths):
+            if i % 10000 == 0:
+                logger.info(f"Converting path {i}/{num_paths}")
+            
+            trip_id = row['trip_id']
+            path_str = row['path']
+            
+            # Convert [[X,Y],[X,Y]] string to WKT LINESTRING
+            try:
+                # Parse the string representation of the coordinates
+                coordinates = json.loads(path_str)
+                
+                if coordinates:
+                    if len(coordinates) >= 2:
+                        # Create WKT LINESTRING format
+                        wkt_coords = ', '.join([f"{lon} {lat}" for lon, lat in coordinates])
+                        wkt = f"LINESTRING({wkt_coords})"
+                    elif len(coordinates) == 1:
+                        lon, lat = coordinates[0]
+                        wkt = f"POINT({lon} {lat})"
+                    else:
+                        logger.warning(f"Trip {trip_id} has empty coordinate list: {path_str}")
+                        continue
+
+                    batch.append((trip_id, wkt))
+
+                    # Insert in batches
+                    if len(batch) >= batch_size:
+                        insert_paths_batch(pg, batch)
+                        batch = []
+                else:
+                    logger.warning(f"Trip {trip_id} has invalid path: {path_str}")
+
+                    
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.error(f"Failed to parse path for trip {trip_id}: {e}")
+                continue
+        
+        # Insert remaining paths
+        if batch:
+            insert_paths_batch(pg, batch)
+            
+        pg.commit()
     logger.info("Finished migrating paths from sqlite to pg!")
 
 
@@ -273,6 +310,89 @@ def insert_paths_batch(pg, batch):
 
     pg.execute(query, param_dicts)
 
+def backfill_carbon_for_all_trips(pg_session=None, commit_every=10000):
+    """
+    Calculate and update carbon footprint for all trips using PostgreSQL only.
+    Only pass path data to the carbon calculator for air trips.
+    """
+    logger.info("Calculating carbon footprint for all trips (PostgreSQL only)...")
+
+    with get_or_create_pg_session(pg_session) as pg:
+        trips = pg.execute(text("""
+            SELECT
+                trip_id,
+                trip_type,
+                trip_length,
+                countries,
+                start_datetime::text AS start_datetime,
+                end_datetime::text   AS end_datetime,
+                estimated_trip_duration,
+                manual_trip_duration
+            FROM trips
+            ORDER BY trip_id
+        """)).fetchall()
+
+        total = len(trips)
+        logger.info(f"Found {total} trips to calculate carbon for")
+
+        for idx, row in enumerate(trips, 1):
+            if idx % commit_every == 0:
+                logger.info(f"Progress: {idx}/{total} trips processed")
+
+            try:
+                trip = dict(row._mapping)
+            except AttributeError:
+                trip = dict(row)
+
+            trip_id = trip["trip_id"]
+            trip_type = trip["trip_type"]
+
+            # Only fetch/prepare path for air trips
+            path_data = None
+            if trip_type in ("air", "helicopter"):
+                path_row = pg.execute(
+                    text("SELECT ST_AsGeoJSON(path) AS path_json FROM paths WHERE trip_id = :trip_id"),
+                    {"trip_id": trip_id}
+                ).fetchone()
+                if path_row:
+                    try:
+                        path_json = (dict(path_row._mapping) if hasattr(path_row, "_mapping") else dict(path_row)).get("path_json")
+                        if path_json:
+                            gj = json.loads(path_json)
+                            if gj.get("type") == "LineString":
+                                # GeoJSON coords are [lon, lat]
+                                path_data = [{"lat": lat, "lng": lon} for lon, lat in gj.get("coordinates", [])]
+                            elif gj.get("type") == "Point":
+                                coords = gj.get("coordinates", [])
+                                if len(coords) >= 2:
+                                    path_data = [{"lat": coords[1], "lng": coords[0]}]
+                    except Exception as e:
+                        logger.warning(f"Trip {trip_id}: could not parse path GeoJSON: {e}")
+
+            trip_data = {
+                "trip_id": trip_id,
+                "type": trip.get("trip_type"),
+                "trip_length": trip.get("trip_length"),
+                "countries": trip.get("countries"),
+                "start_datetime": trip.get("start_datetime"),   # strings now
+                "end_datetime": trip.get("end_datetime"),       # strings now
+                "estimated_trip_duration": trip.get("estimated_trip_duration"),
+                "manual_trip_duration": trip.get("manual_trip_duration"),
+            }
+
+            carbon = calculate_carbon_footprint_for_trip(trip_data, path_data)
+           
+
+            pg.execute(
+                text("UPDATE trips SET carbon = :carbon WHERE trip_id = :trip_id"),
+                {"carbon": carbon, "trip_id": trip_id}
+            )
+
+            if idx % commit_every == 0:
+                pg.commit()
+
+        pg.commit()
+        logger.info(f"Carbon backfill complete: {total} trips processed")
 
 def compare_all_trips():
     # Fetch trip IDs from SQLite

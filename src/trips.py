@@ -1,10 +1,10 @@
-import datetime
+import datetime as dt_module
 import json
 import logging
 import traceback
 
 from flask import abort, request
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from py.sql import deletePathQuery, getUserLines, saveQuery, updatePath, updateTripQuery
 from py.utils import getCountriesFromPath
@@ -19,7 +19,8 @@ from src.sql.trips import (
     update_ticket_null_query,
     update_trip_query,
     update_trip_type_query,
-    get_unique_user_trips
+    get_unique_user_trips,
+    insert_or_update_path_query
 )
 from src.utils import (
     get_user_id,
@@ -107,12 +108,64 @@ class Trip:
         return tuple(vars(self).values())
 
 
+def _convert_path_to_wkt(path_data):
+    """
+    Convert path data to WKT format for PostGIS.
+    
+    Args:
+        path_data: Can be a Path object, a JSON string, or a list of coordinates
+                  Coordinates should be in format [[lat, lng], [lat, lng], ...]
+                  or [{"lat": x, "lng": y}, {"lat": x, "lng": y}, ...]
+        
+    Returns:
+        WKT string (LINESTRING or POINT) or None if invalid
+    """
+    try:
+        # Convert path_data to coordinates
+        if isinstance(path_data, Path):
+            coordinates = json.loads(path_data.path) if isinstance(path_data.path, str) else path_data.path
+        elif isinstance(path_data, str):
+            coordinates = json.loads(path_data)
+        else:
+            coordinates = path_data
+        
+        if not coordinates or len(coordinates) == 0:
+            return None
+        
+        # Handle different coordinate formats
+        # Check if coordinates are dictionaries with lat/lng keys
+        if isinstance(coordinates[0], dict):
+            coord_pairs = [(c["lng"], c["lat"]) for c in coordinates]
+        # Check if coordinates are lists/tuples
+        elif isinstance(coordinates[0], (list, tuple)) and len(coordinates[0]) >= 2:
+            coord_pairs = [(c[1], c[0]) for c in coordinates]
+        else:
+            logger.error(f"Unknown coordinate format: {type(coordinates[0])}, value: {coordinates[0]}")
+            return None
+            
+        if len(coord_pairs) >= 2:
+            # Create WKT LINESTRING format for multiple points
+            # WKT expects longitude latitude order
+            wkt_coords = ', '.join([f"{lng} {lat}" for lat, lng in coord_pairs])
+            return f"LINESTRING({wkt_coords})"
+        elif len(coord_pairs) == 1:
+            # Create WKT POINT format for single point
+            lat, lng = coord_pairs[0]
+            return f"POINT({lng} {lat})"
+        else:
+            return None
+    except Exception as e:
+        logger.error(f"Failed to convert path to WKT: {e}", exc_info=True)
+        return None
+
+
 def create_trip(trip: Trip, pg_session=None):
     with get_or_create_pg_session(pg_session) as pg:
         if trip.trip_id is None:
             # need to create the trip in sqlite first
             trip.trip_id = _create_trip_in_sqlite(trip)
 
+        # Insert the trip
         pg.execute(
             insert_trip_query(),
             {
@@ -146,6 +199,15 @@ def create_trip(trip: Trip, pg_session=None):
                 "carbon": trip.carbon
             },
         )
+        
+        # Insert the path if it exists
+        if trip.path:
+            wkt = _convert_path_to_wkt(trip.path)
+            if wkt:
+                pg.execute(
+                    insert_or_update_path_query(),
+                    {"trip_id": trip.trip_id, "wkt": wkt}
+                )
 
     compare_trip(trip.trip_id)
     logger.info(f"Successfully created trip {trip.trip_id}")
@@ -267,6 +329,7 @@ def _create_trip_in_sqlite(trip: Trip):
 def duplicate_trip(trip_id: int):
     with pg_session() as pg:
         new_trip_id = _duplicate_trip_in_sqlite(trip_id)
+        # The duplicate_trip_query now handles both trip and path duplication
         pg.execute(
             duplicate_trip_query(),
             {
@@ -318,7 +381,7 @@ def _duplicate_trip_in_sqlite(trip_id):
 def update_trip(trip_id: int, trip: Trip, formData=None, updateCreated=False):
     with pg_session() as pg:
         _update_trip_in_sqlite(formData, trip.last_modified, trip_id, updateCreated)
-        print(trip.carbon)
+
         pg.execute(
             update_trip_query(),
             {
@@ -351,6 +414,17 @@ def update_trip(trip_id: int, trip: Trip, formData=None, updateCreated=False):
                 "carbon": trip.carbon
             },
         )
+        
+        # Update the path if it was provided in formData
+        if formData and "path" in formData:
+            path = [[coord["lat"], coord["lng"]] for coord in json.loads(formData["path"])]
+            if path:
+                wkt = _convert_path_to_wkt(path)
+                if wkt:
+                    pg.execute(
+                        insert_or_update_path_query(),
+                        {"trip_id": trip_id, "wkt": wkt}
+                    )
 
     compare_trip(trip_id)
     logger.info(f"Successfully updated trip {trip_id}")
@@ -428,7 +502,7 @@ def _update_trip_in_sqlite(
     }
 
     if updateCreated:
-        updateData["created"] = datetime.datetime.now()
+        updateData["created"] = datetime.now()
 
     if "estimated_trip_duration" in formData and "trip_length" in formData:
         updateData["countries"] = getCountriesFromPath(
@@ -459,6 +533,7 @@ def _update_trip_in_sqlite(
 def delete_trip(trip_id: int, username: str):
     with pg_session() as pg:
         _delete_trip_in_sqlite(username, trip_id)
+        # The delete_trip_query now handles both path and trip deletion
         pg.execute(delete_trip_query(), {"trip_id": trip_id})
 
     compare_trip(trip_id)
@@ -612,7 +687,7 @@ def ensure_values_equal(sqlite_trip, pg_trip, property_name):
         "last_modified",
         "purchase_date",
     ]:
-        values_are_equal = abs(pg_val - sqlite_val) <= datetime.timedelta(seconds=1)
+        values_are_equal = abs(pg_val - sqlite_val) <= timedelta(seconds=1)
     else:
         values_are_equal = pg_val == sqlite_val
 
@@ -627,23 +702,23 @@ def ensure_values_equal(sqlite_trip, pg_trip, property_name):
 
 def parse_date(date: str):
     try:
-        return datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+        return datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
     except Exception:
         pass
     try:
-        return datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S.%f")
+        return datetime.strptime(date, "%Y-%m-%d %H:%M:%S.%f")
     except Exception:
         pass
     try:
-        return datetime.datetime.strptime(date, "%Y/%m/%d %H:%M:%S")
+        return datetime.strptime(date, "%Y/%m/%d %H:%M:%S")
     except Exception:
         pass
     try:
-        return datetime.datetime.strptime(date, "%d/%m/%Y %H:%M")
+        return datetime.strptime(date, "%d/%m/%Y %H:%M")
     except Exception:
         pass
     try:
-        return datetime.datetime.strptime(date, "%Y-%m-%d")
+        return datetime.strptime(date, "%Y-%m-%d")
     except Exception:
         logger.error(f"Date format not recognized: {date} ({type(date)})")
         raise
@@ -790,8 +865,8 @@ def fetch_trips_paths(username, lastLocal, public):
             last_modified_filter = None
    
     with pg_session() as pg:
-        # Single query to get all trips with their paths and time status
-        result = pg.execute(
+        # Query to get filtered trips (modified since lastLocal)
+        filtered_result = pg.execute(
             get_unique_user_trips(),
             {
                 "user_id": user_id,
@@ -799,10 +874,19 @@ def fetch_trips_paths(username, lastLocal, public):
                 "public": public
             }
         ).fetchall()
-   
-    # Convert to list and reverse order
-    trips_data = list(reversed(result))
+        
+        # Query to get ALL trip IDs (for cache comparison)
+        all_ids_result = pg.execute(
+            get_unique_user_trips(),
+            {
+                "user_id": user_id,
+                "lastLocal": None,
+                "public": public
+            }
+        ).fetchall()
+    trips_data = list(reversed(filtered_result))
     print(public, len(trips_data))
+    idList = [dict(row).get('trip_id') for row in all_ids_result]
    
     # Helper function to format datetime to ISO string
     def format_datetime_iso(dt):
@@ -818,7 +902,6 @@ def fetch_trips_paths(username, lastLocal, public):
    
     # Build response
     tripList = []
-    idList = []
    
     for row in trips_data:
         trip_dict = dict(row)
@@ -828,11 +911,11 @@ def fetch_trips_paths(username, lastLocal, public):
             'start_datetime', 'end_datetime', 'utc_start_datetime', 'utc_end_datetime',
             'created', 'last_modified', 'purchase_date'
         ]
-        
+       
         for field in datetime_fields:
             if field in trip_dict and trip_dict[field] is not None:
                 trip_dict[field] = format_datetime_iso(trip_dict[field])
-              
+             
         # Extract and remove metadata
         time_status = trip_dict.pop('time_status')
         path_json_str = trip_dict.pop('path', '{}')
@@ -845,16 +928,12 @@ def fetch_trips_paths(username, lastLocal, public):
                 path_json = {}
         else:
             path_json = {}
-        print(path_json["type"])
         path = path_json["coordinates"] if path_json['type']=="LineString" else [path_json["coordinates"]]
-        # Add to lists
-        idList.append(trip_dict.get('trip_id'))
         tripList.append({
             "trip": trip_dict,
             "time": time_status,
             "path": path
         })
-
         #TODO: Remove legacy compat of frontend once Frontend is updated
         if trip_dict["start_datetime"] is None:
             if trip_dict["is_project"] is True:
@@ -868,7 +947,6 @@ def fetch_trips_paths(username, lastLocal, public):
             trip_dict["utc_filtered_end_datetime"] = trip_dict["utc_end_datetime"] if trip_dict["utc_end_datetime"] is not None else trip_dict["end_datetime"]
         trip_dict["uid"] = trip_dict.pop("trip_id")
         trip_dict["type"] = trip_dict.pop("trip_type")
-
    
     print(datetime.now() - now)
     lastLocal = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

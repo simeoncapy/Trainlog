@@ -621,5 +621,6 @@
     "useNewRouter": "Tente novo router (mostra eletrificação)",
     "news": "Notícias do Trainlog",
     "CO2": "CO₂e",
-    "donate": "Compra-me um café"
+    "donate": "Compra-me um café",
+    "data_migration_message": "Uma migração de base de dados está em progresso. As operações de escrita estão temporariamente desativadas."
 }

@@ -28,6 +28,7 @@ from inspect import getcallargs
 from io import BytesIO, StringIO
 from shapely.geometry import shape, mapping
 from shapely.ops import unary_union
+from pathlib import Path as osPath
 
 import distinctipy
 import flask_monitoringdashboard as dashboard
@@ -221,7 +222,7 @@ from src.trips import (
     delete_trip,
     update_trip_type,
     attach_ticket_to_trips,
-    delete_ticket_from_db
+    delete_ticket_from_db,
     fetch_trips_paths
 )
 from src.paths import Path
@@ -591,9 +592,14 @@ def get_country_codes_from_files():
     sorted_country_codes = dict(sorted(country_codes.items(), key=sort_key))
     return sorted_country_codes
 
+def db_lock_state():
+    """Check if database sync is currently in progress"""
+    lock_file = osPath("db_sync.lock")
+    return lock_file.exists()
+
 
 app.jinja_env.globals.update(get_country_codes_from_files=get_country_codes_from_files)
-
+app.jinja_env.globals.update(db_lock_state=db_lock_state)
 
 @app.route("/api/localtime", methods=["GET"])
 def get_local_time():
@@ -2514,22 +2520,25 @@ def update_user_count():
         User.last_login >= twenty_four_hours_ago
     ).count()
     today = datetime.utcnow().date()
-    with managed_cursor(mainConn) as cursor:
-        cursor.execute("SELECT number FROM daily_active_users WHERE date = ?", (today,))
-        result = cursor.fetchone()
-        if result:
-            current_count = result["number"]
-            if active_users_count > current_count:
+    try:
+        with managed_cursor(mainConn) as cursor:
+            cursor.execute("SELECT number FROM daily_active_users WHERE date = ?", (today,))
+            result = cursor.fetchone()
+            if result:
+                current_count = result["number"]
+                if active_users_count > current_count:
+                    cursor.execute(
+                        "UPDATE daily_active_users SET number = ? WHERE date = ?",
+                        (active_users_count, today),
+                    )
+            else:
                 cursor.execute(
-                    "UPDATE daily_active_users SET number = ? WHERE date = ?",
-                    (active_users_count, today),
+                    "INSERT INTO daily_active_users (date, number) VALUES (?, ?)",
+                    (today, active_users_count),
                 )
-        else:
-            cursor.execute(
-                "INSERT INTO daily_active_users (date, number) VALUES (?, ?)",
-                (today, active_users_count),
-            )
-    mainConn.commit()
+        mainConn.commit()
+    except:
+        pass
 
 
 @app.route("/", methods=["GET", "POST"])

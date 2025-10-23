@@ -260,12 +260,24 @@
 
   </div>
 </nav>
+{% if db_lock_state() %}
+<div class="system-banner alert alert-warning border-0 rounded-0 mb-0 py-2 text-center" role="alert">
+  <i class="bi bi-exclamation-triangle-fill me-2"></i>
+  {{data_migration_message}}
+</div>
+{% endif %}
 
 <style>
   .scrollable-dropdown {
     max-height: 320px;
     overflow-y: auto;
 }
+  .system-banner {
+    position: sticky;
+    top: 0;              
+    z-index: 1030;
+  }
+  .navbar.fixed-top + .system-banner { top: 56px; } 
 </style>
 
 <script type="text/javascript">

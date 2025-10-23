@@ -621,5 +621,6 @@
     "useNewRouter": "Probeer nieuwe router (toont elektrificatie)",
     "news": "Trainlog Nieuws",
     "CO2": "CO₂e",
-    "donate": "Koop een koffie voor me"
+    "donate": "Koop een koffie voor me",
+    "data_migration_message": "Een databasemigratie is aan de gang. Schrijfhandelingen zijn tijdelijk uitgeschakeld."
 }

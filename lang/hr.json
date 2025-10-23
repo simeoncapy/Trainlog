@@ -621,5 +621,6 @@
     "useNewRouter": "Isprobajte novi router (prikazuje elektrifikaciju)",
     "news": "Vijesti Trainlog",
     "CO2": "CO₂e",
-    "donate": "Kupi mi kavu"
+    "donate": "Kupi mi kavu",
+    "data_migration_message": "Migracija baze podataka je u tijeku. Operacije pisanja su privremeno onemogućene."
 }

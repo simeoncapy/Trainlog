@@ -621,5 +621,6 @@
     "useNewRouter": "Próbálja ki az új útválasztót (mutatja az elektromos hálózatot)",
     "news": "Trainlog Hírek",
     "CO2": "CO₂e",
-    "donate": "Vegyél nekem egy kávét"
+    "donate": "Vegyél nekem egy kávét",
+    "data_migration_message": "Egy adatbázis-migráció folyamatban van. Az írási műveletek ideiglenesen le vannak tiltva."
 }

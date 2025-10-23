@@ -1,3 +1,4 @@
+-- Duplicate the trip
 INSERT INTO trips (
     trip_id,
     user_id,
@@ -25,7 +26,8 @@ INSERT INTO trips (
     price,
     currency,
     ticket_id,
-    purchase_date
+    purchase_date,
+    carbon
 )
 SELECT
     :new_trip_id,
@@ -54,7 +56,13 @@ SELECT
     price,
     currency,
     ticket_id,
-    purchase_date
+    purchase_date,
+    carbon
 FROM trips
-WHERE trip_id = :trip_id
-RETURNING trip_id
+WHERE trip_id = :trip_id;
+
+-- Duplicate the path
+INSERT INTO paths (trip_id, path)
+SELECT :new_trip_id, path
+FROM paths
+WHERE trip_id = :trip_id;

@@ -621,5 +621,6 @@
     "useNewRouter": "Neuen Router ausprobieren (zeigt Elektrifizierung)",
     "news": "Trainlog-Nachrichten",
     "CO2": "CO₂e",
-    "donate": "Kauf mir einen Kaffee"
+    "donate": "Kauf mir einen Kaffee",
+    "data_migration_message": "Eine Datenbankmigration ist im Gange. Schreibvorgänge sind vorübergehend deaktiviert."
 }

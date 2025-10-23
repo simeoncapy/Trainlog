@@ -621,5 +621,6 @@
     "useNewRouter": "Vyzkoušejte nový router (zobrazuje elektrifikaci)",
     "news": "Zprávy Trainlog",
     "CO2": "CO₂e",
-    "donate": "Kup mi kávu"
+    "donate": "Kup mi kávu",
+    "data_migration_message": "Probíhá migrace databáze. Zápisové operace jsou dočasně zakázány."
 }
