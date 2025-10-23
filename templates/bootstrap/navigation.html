@@ -29,7 +29,7 @@
                   {% endif %}
                   <a class="dropdown-item" href="{{ url_for('adminManual') }}"><i class="bi bi-sign-stop-lights"></i> Manual Stations</a>
                   <a class="dropdown-item" href="{{ url_for('stations') }}"><i class="fa-solid fa-globe"></i> Stations</a>
-                  <a class="dropdown-item" href="{{ url_for('editCountriesList') }}"><i class="bi bi-flag"></i> Coverage edit</a>
+                  <a class="dropdown-item" href="{{ url_for('completion.edit_countries_list') }}"><i class="bi bi-flag"></i> Coverage edit</a>
                   <a class="dropdown-item" href="{{ url_for('show_operators') }}"><i class="bi bi-images"></i> Operators</a>
                   <a class="dropdown-item" href="{{ url_for('airliners') }}"><i class="bi bi-airplane"></i></i> Airliners</a>
               </div>
@@ -130,7 +130,7 @@
                 <h6 class="dropdown-header"><script>document.write(regionNames.of('{% print(continent).split("_")[1] %}'));</script> ({{subdivisions}})</h6>
                 {% endif %}
                 {% for cc in codes %}
-                    <a class="dropdown-item countryLink" data-country="{{cc}}" href="{{ url_for('pCountries', cc=cc, username=username) }}">
+                    <a class="dropdown-item countryLink" data-country="{{cc}}" href="">
                         {{ cc }}
                     </a>
                 {% endfor %}

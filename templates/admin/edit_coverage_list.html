@@ -29,7 +29,7 @@
                     {% if continents['EU'] %}
                         {% for cc in continents['EU'] %}
                             <li class="list-group-item">
-                                <a class="countryLink" data-country="{{ cc }}" href="{{ url_for('editCountries', cc=cc) }}">{{ cc }}</a>
+                                <a class="countryLink" data-country="{{ cc }}" href="{{ url_for('completion.edit_countries', cc=cc) }}">{{ cc }}</a>
                             </li>
                         {% endfor %}
                     {% endif %}
@@ -44,7 +44,7 @@
                         <ul class="list-group">
                             {% for cc in codes %}
                                 <li class="list-group-item">
-                                    <a class="countryLink" data-country="{{ cc }}" href="{{ url_for('editCountries', cc=cc) }}">{{ cc }}</a>
+                                    <a class="countryLink" data-country="{{ cc }}" href="{{ url_for('completion.edit_countries', cc=cc) }}">{{ cc }}</a>
                                 </li>
                             {% endfor %}
                         </ul>
@@ -70,7 +70,7 @@
                             <ul class="list-group">
                                 {% for cc in codes %}
                                     <li class="list-group-item">
-                                        <a class="countryLink" data-country="{{ cc }}" href="{{ url_for('editCountries', cc=cc) }}">{{ cc }}</a>
+                                        <a class="countryLink" data-country="{{ cc }}" href="{{ url_for('completion.edit_countries', cc=cc) }}">{{ cc }}</a>
                                     </li>
                                 {% endfor %}
                             </ul>
@@ -90,7 +90,7 @@
                             <ul class="list-group">
                                 {% for cc in codes %}
                                     <li class="list-group-item">
-                                        <a class="countryLink" data-country="{{ cc }}" href="{{ url_for('editCountries', cc=cc) }}">{{ cc }}</a>
+                                        <a class="countryLink" data-country="{{ cc }}" href="{{ url_for('completion.edit_countries', cc=cc) }}">{{ cc }}</a>
                                     </li>
                                 {% endfor %}
                             </ul>

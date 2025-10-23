@@ -251,7 +251,7 @@ document.getElementById('processQueue').addEventListener('click', function() {
     document.querySelector('.spinner-container').style.display = 'flex';
     
     // Send queue to server
-    fetch('{{url_for("process_queue", cc=cc)}}', {
+    fetch('{{url_for("completion.process_queue", cc=cc)}}', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -297,7 +297,7 @@ document.getElementById('clearQueue').addEventListener('click', function() {
 });
 
 // Load GeoJSON
-fetch('{{url_for("get_full_geojson", cc=cc)}}')
+fetch('{{url_for("completion.get_full_geojson", cc=cc)}}')
     .then(response => response.json())
     .then(data => {
         console.log('Loaded data:', data);
