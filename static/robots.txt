@@ -5,6 +5,7 @@ Allow: /demo
 Allow: /login
 Allow: /signup
 Allow: /privacy
+Allow: /static
 Allow: /$
 
 Disallow: /
