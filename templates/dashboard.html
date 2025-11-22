@@ -247,7 +247,7 @@
 const username = "{{ username }}";
 const tableBody = document.querySelector("#completion-table tbody");
 
-fetch(`/api/user_completion/${username}`)
+fetch(`/api/user_completion/u/${username}`)
   .then(res => res.json())
   .then(data => {
     const { countries, regions } = data;
