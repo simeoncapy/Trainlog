@@ -5128,7 +5128,7 @@ def fetchTripsPaths(username, lastLocal, public):
             .filter(User.username == username)
             .first().uid
         )
-        is_friend = (
+        is_friend = currentUserId == targetUserId or (
             authDb.session.query(User.uid, User.username)
             .join(Friendship, User.uid == Friendship.friend_id)
             .filter(Friendship.user_id == targetUserId, Friendship.friend_id == currentUserId, Friendship.accepted != None)
@@ -5640,9 +5640,23 @@ def get_trips_api_internal(username, is_public=False):
     past = int(request.args.get("projects") == "False")
     filter_types = request.form.get("filterTypes", type=int, default=0)
 
-    # Force type filtering for public access
-    if is_public:
-        filter_types = 1
+    currentUser = getUser()
+    if currentUser != 'public':
+        currentUserId = User.query.filter_by(username=currentUser).first().uid
+        targetUserId = (
+            authDb.session.query(User.uid, User.username)
+            .filter(User.username == username)
+            .first().uid
+        )
+        is_friend = currentUserId == targetUserId or (
+                        authDb.session.query(User.uid, User.username)
+                        .join(Friendship, User.uid == Friendship.friend_id)
+                        .filter(Friendship.user_id == targetUserId, Friendship.friend_id == currentUserId,
+                                Friendship.accepted != None)
+                        .first()
+                    ) is not None
+    else:
+        is_friend = 0
 
     # Sorting parameters
     sort_column = request.form.get("order[0][column]", type=int, default=3)
@@ -5772,9 +5786,17 @@ def get_trips_api_internal(username, is_public=False):
     base_data_query = getDynamicUserTrips + "SELECT * FROM FilteredTrips"
     
     # Add type filtering if needed
-    if filter_types:
-        base_count_query += " WHERE type IN ('train', 'bus', 'air', 'ferry', 'helicopter', 'aerialway', 'tram', 'metro')"
-        base_data_query += " WHERE type IN ('train', 'bus', 'air', 'ferry', 'helicopter', 'aerialway', 'tram', 'metro')"
+    if is_public and is_friend:
+        base_count_query += " WHERE visibility = 'public' OR visibility = 'friends' OR (visibility IS NULL AND type IN ('train', 'bus', 'air', 'ferry', 'helicopter', 'aerialway', 'tram', 'metro'))"
+        base_data_query += " WHERE visibility = 'public' OR visibility = 'friends' OR (visibility IS NULL AND type IN ('train', 'bus', 'air', 'ferry', 'helicopter', 'aerialway', 'tram', 'metro'))"
+
+        # Add column-specific conditions
+        if additional_conditions:
+            base_count_query += " AND " + " AND ".join(additional_conditions)
+            base_data_query += " AND " + " AND ".join(additional_conditions)
+    elif is_public:
+        base_count_query += " WHERE visibility = 'public' OR (visibility IS NULL AND type IN ('train', 'bus', 'air', 'ferry', 'helicopter', 'aerialway', 'tram', 'metro'))"
+        base_data_query += " WHERE visibility = 'public' OR (visibility IS NULL AND type IN ('train', 'bus', 'air', 'ferry', 'helicopter', 'aerialway', 'tram', 'metro'))"
         
         # Add column-specific conditions
         if additional_conditions:
