@@ -2,6 +2,7 @@ WITH base_filter AS (
     SELECT *, COALESCE(utc_start_datetime, start_datetime) AS filtered_datetime
     FROM trips
     WHERE (:tripType = 'combined' OR trip_type = :tripType)
+    AND trip_type not in ('accommodation', 'poi', 'restaurant')
     AND user_id = :user_id
     AND EXTRACT(YEAR FROM COALESCE(utc_start_datetime, start_datetime))::text = :year
     AND is_project = false

@@ -296,7 +296,7 @@ def get_wrapped_data(username, year, trip_type="combined"):
     
     # Calculate what percent of the year they traveled
     if wrapped["days_traveled"] > 0:
-        wrapped["year_percent"] = round((wrapped["days_traveled"] / 365) * 100)
+        wrapped["year_percent"] = round((wrapped["total_duration"] / (365 * 86400)) * 100, 1)
     else:
         wrapped["year_percent"] = 0
     
