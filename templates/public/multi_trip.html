@@ -10,6 +10,18 @@
     background: #1a1d28;
 }
 
+#canvas-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.maplibregl-marker {
+    z-index: 2 !important;
+}
+
 .spinner-container {
     position: fixed;
     top: 0;
@@ -34,20 +46,45 @@
     left: 10px;
     background: rgba(255, 255, 255, 0.9);
     border-radius: 8px;
-    padding: 12px;
     z-index: 1000;
     box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-    max-height: 50%;
-    overflow-y: auto;
     min-width: 150px;
 }
 
-#user-sidebar h4 {
-    margin: 0 0 10px 0;
+#user-sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    cursor: pointer;
+    user-select: none;
+}
+
+#user-sidebar-header h4 {
+    margin: 0;
     font-size: 14px;
     color: #333;
-    border-bottom: 1px solid #ddd;
-    padding-bottom: 6px;
+}
+
+#user-sidebar-header .toggle-icon {
+    font-size: 12px;
+    color: #666;
+    transition: transform 0.2s;
+}
+
+#user-sidebar.collapsed #user-sidebar-header .toggle-icon {
+    transform: rotate(-90deg);
+}
+
+#user-list-container {
+    max-height: 300px;
+    overflow-y: auto;
+    border-top: 1px solid #ddd;
+    padding: 8px 12px;
+}
+
+#user-sidebar.collapsed #user-list-container {
+    display: none;
 }
 
 .user-item {
@@ -110,10 +147,16 @@
 </div>
 
 <div id="map" class="mapIndiv"></div>
+<canvas id="canvas-overlay"></canvas>
 
 <div id="user-sidebar">
-    <h4>Users</h4>
-    <div id="user-list"></div>
+    <div id="user-sidebar-header" onclick="toggleSidebar()">
+        <h4>Users</h4>
+        <span class="toggle-icon">▼</span>
+    </div>
+    <div id="user-list-container">
+        <div id="user-list"></div>
+    </div>
 </div>
 
 <div id="time-slider-container">
@@ -131,8 +174,14 @@ let coloursData = {};
 let userMarkers = {};
 let multiMarkers = [];
 let minTimestamp, maxTimestamp;
+let canvas, ctx;
+let currentTime = 0;
 
-// Initialize map and load trips
+// Track trip states: 0 = not started, 1 = in progress, 2 = completed
+let tripStates = [];
+let completedFeatures = [];
+let completedSource = null;
+
 async function initialize() {
     map = await MapLibreUtils.initializeMapLibre({
         container: 'map',
@@ -142,18 +191,35 @@ async function initialize() {
         zoom: 2
     });
 
+    canvas = document.getElementById('canvas-overlay');
+    ctx = canvas.getContext('2d');
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
     if (map.isStyleLoaded()) {
         loadTrips();
     } else {
         map.once('load', loadTrips);
     }
+
+    // Only redraw canvas for active trips during map movement
+    map.on('move', drawActiveTrips);
+    map.on('moveend', drawActiveTrips);
+    map.on('resize', () => { resizeCanvas(); drawActiveTrips(); });
+}
+
+function resizeCanvas() {
+    canvas.width = map.getCanvas().width;
+    canvas.height = map.getCanvas().height;
+    canvas.style.width = map.getCanvas().style.width;
+    canvas.style.height = map.getCanvas().style.height;
 }
 
 function loadTrips() {
     $.get('{{url_for("getMultiTrips", tripIds=tripIds)}}', function(data) {
         tripsData = data[0].reverse();
         coloursData = data[2];
-        placePolylines();
+        processTrips();
         $('.spinner-container').hide();
     });
 }
@@ -170,16 +236,17 @@ function getUserColor(username) {
     return 'rgb(255,255,255)';
 }
 
-function placePolylines() {
-    const features = [];
+window.tripMetas = [];
+
+function processTrips() {
     const timestamps = [];
+    const bounds = new maplibregl.LngLatBounds();
 
     tripsData.forEach((tripData, index) => {
         const trip = tripData.trip;
         const path = tripData.path;
         const color = getUserColor(trip.username);
 
-        // Create geodesic path for air trips
         let coords;
         if (trip.type === 'air' && path.length === 2) {
             coords = MapLibreUtils.createGeodesicLine([path[0][1], path[0][0]], [path[1][1], path[1][0]]);
@@ -194,26 +261,31 @@ function placePolylines() {
             timestamps.push(startTs, endTs);
         }
 
-        features.push({
-            type: 'Feature',
-            geometry: { type: 'LineString', coordinates: coords },
-            properties: {
-                id: index,
-                username: trip.username,
-                color: color,
-                origin: trip.origin_station,
-                destination: trip.destination_station,
-                date: trip.start_date,
-                startTime: trip.start_time,
-                endTime: trip.end_time,
-                startTs: startTs,
-                endTs: endTs,
-                originalCoords: coords,
-                type: trip.type
-            }
+        coords.forEach(c => bounds.extend(c));
+
+        window.tripMetas.push({
+            index,
+            coords,
+            startTs,
+            endTs,
+            username: trip.username,
+            color,
+            type: trip.type,
+            origin: trip.origin_station,
+            destination: trip.destination_station,
+            date: trip.start_date,
+            startTime: trip.start_time,
+            endTime: trip.end_time
         });
 
-        // Create user marker if not exists
+        tripStates.push(0);
+
+        completedFeatures.push({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: [] },
+            properties: { color, type: trip.type, username: trip.username }
+        });
+
         if (!userMarkers[trip.username]) {
             const el = document.createElement('div');
             el.style.cssText = `background-color: ${color}; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; cursor: pointer;`;
@@ -227,31 +299,28 @@ function placePolylines() {
         }
     });
 
-    // Add source
-    map.addSource('trips', {
+    // MapLibre layers for completed trips (static, GPU-accelerated)
+    map.addSource('completed-trips', {
         type: 'geojson',
-        data: { type: 'FeatureCollection', features: features }
+        data: { type: 'FeatureCollection', features: completedFeatures }
     });
 
-    // Add shadow layer first (underneath)
     map.addLayer({
-        id: 'trips-shadow',
+        id: 'completed-shadow',
         type: 'line',
-        source: 'trips',
+        source: 'completed-trips',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
             'line-color': '#000000',
             'line-width': ['case', ['==', ['get', 'type'], 'air'], 4, 7],
-            'line-opacity': 0.8,
-            'line-blur': 0
+            'line-opacity': 0.6
         }
     });
 
-    // Add main layer on top
     map.addLayer({
-        id: 'trips-layer',
+        id: 'completed-lines',
         type: 'line',
-        source: 'trips',
+        source: 'completed-trips',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
             'line-color': ['get', 'color'],
@@ -260,24 +329,10 @@ function placePolylines() {
         }
     });
 
-    // Click handler
-    map.on('click', 'trips-layer', (e) => {
-        const props = e.features[0].properties;
-        new maplibregl.Popup({ offset: 10 })
-            .setLngLat(e.lngLat)
-            .setHTML(getPopupContent(props.username, props.origin, props.destination, props.date, props.startTime, props.endTime))
-            .addTo(map);
-    });
+    completedSource = map.getSource('completed-trips');
 
-    map.on('mouseenter', 'trips-layer', () => map.getCanvas().style.cursor = 'pointer');
-    map.on('mouseleave', 'trips-layer', () => map.getCanvas().style.cursor = '');
-
-    // Fit bounds
-    const bounds = new maplibregl.LngLatBounds();
-    features.forEach(f => f.geometry.coordinates.forEach(c => bounds.extend(c)));
     map.fitBounds(bounds, { padding: 50 });
 
-    // Initialize slider
     if (timestamps.length > 0) {
         minTimestamp = Math.min(...timestamps);
         maxTimestamp = Math.max(...timestamps);
@@ -286,13 +341,80 @@ function placePolylines() {
         slider.max = maxTimestamp;
         slider.value = minTimestamp;
         slider.step = (maxTimestamp - minTimestamp) / 1000;
+        currentTime = minTimestamp;
     }
 
-    // Store features for animation
-    window.tripFeatures = features;
-    
-    // Build user sidebar
     buildUserSidebar();
+}
+
+function projectToCanvas(lngLat) {
+    const point = map.project(lngLat);
+    const ratio = window.devicePixelRatio || 1;
+    return [point.x * ratio, point.y * ratio];
+}
+
+// Only draws in-progress trips on canvas (few trips = fast)
+function drawActiveTrips() {
+    const ratio = window.devicePixelRatio || 1;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    const metas = window.tripMetas;
+    
+    for (let i = 0; i < metas.length; i++) {
+        if (tripStates[i] !== 1) continue;
+        
+        const meta = metas[i];
+        const coords = meta.coords;
+        const startTs = meta.startTs;
+        const endTs = meta.endTs;
+        const pathLength = coords.length;
+
+        const progress = (currentTime - startTs) / (endTs - startTs);
+        const exactIndex = progress * (pathLength - 1);
+        const lowerIndex = Math.floor(exactIndex);
+        const upperIndex = Math.min(Math.ceil(exactIndex), pathLength - 1);
+        const fraction = exactIndex - lowerIndex;
+
+        const visibleCoords = coords.slice(0, upperIndex + 1);
+        if (lowerIndex < pathLength - 1) {
+            const p1 = coords[lowerIndex];
+            const p2 = coords[lowerIndex + 1];
+            visibleCoords[visibleCoords.length - 1] = [
+                p1[0] + (p2[0] - p1[0]) * fraction,
+                p1[1] + (p2[1] - p1[1]) * fraction
+            ];
+        }
+
+        if (visibleCoords.length < 2) continue;
+
+        const projected = visibleCoords.map(c => projectToCanvas(c));
+
+        // Shadow
+        ctx.beginPath();
+        ctx.moveTo(projected[0][0], projected[0][1]);
+        for (let j = 1; j < projected.length; j++) {
+            ctx.lineTo(projected[j][0], projected[j][1]);
+        }
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.lineWidth = (meta.type === 'air' ? 4 : 7) * ratio;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+
+        // Line
+        ctx.beginPath();
+        ctx.moveTo(projected[0][0], projected[0][1]);
+        for (let j = 1; j < projected.length; j++) {
+            ctx.lineTo(projected[j][0], projected[j][1]);
+        }
+        ctx.strokeStyle = meta.color;
+        ctx.lineWidth = (meta.type === 'air' ? 1 : 3) * ratio;
+        ctx.stroke();
+    }
+}
+
+function toggleSidebar() {
+    document.getElementById('user-sidebar').classList.toggle('collapsed');
 }
 
 function buildUserSidebar() {
@@ -313,120 +435,132 @@ function buildUserSidebar() {
     });
 }
 
+let pendingUpdate = null;
+
 function updateMapByTime(value) {
-    const currentTime = parseInt(value);
-    document.getElementById('current-time-display').innerHTML = 'Current Time: ' + new Date(currentTime).toLocaleString();
+    if (pendingUpdate) cancelAnimationFrame(pendingUpdate);
+    pendingUpdate = requestAnimationFrame(() => doUpdateMap(value));
+}
 
-    // Remove existing multi-markers
-    multiMarkers.forEach(m => m.remove());
-    multiMarkers = [];
+function doUpdateMap(value) {
+    currentTime = parseInt(value);
+    document.getElementById('current-time-display').textContent = 'Current Time: ' + new Date(currentTime).toLocaleString();
 
-    // Reset all user markers
-    Object.keys(userMarkers).forEach(username => {
-        userMarkers[username].el.style.opacity = '1';
-        userMarkers[username].marker.getElement().style.pointerEvents = 'auto';
-    });
+    for (let i = 0; i < multiMarkers.length; i++) {
+        multiMarkers[i].remove();
+    }
+    multiMarkers.length = 0;
 
-    const updatedFeatures = [];
     const userPositions = {};
+    const metas = window.tripMetas;
+    let completedChanged = false;
 
-    window.tripFeatures.forEach(feature => {
-        const props = feature.properties;
-        const coords = props.originalCoords;
-        const startTs = props.startTs;
-        const endTs = props.endTs;
-        let visibleCoords = [];
+    for (let i = 0; i < metas.length; i++) {
+        const meta = metas[i];
+        const coords = meta.coords;
+        const startTs = meta.startTs;
+        const endTs = meta.endTs;
+        const pathLength = coords.length;
+        const prevState = tripStates[i];
 
-        if (currentTime >= startTs && currentTime <= endTs) {
+        if (currentTime < startTs) {
+            if (prevState !== 0) {
+                tripStates[i] = 0;
+                completedFeatures[i].geometry.coordinates = [];
+                completedChanged = true;
+            }
+        } else if (currentTime > endTs) {
+            userPositions[meta.username] = coords[pathLength - 1];
+            if (prevState !== 2) {
+                tripStates[i] = 2;
+                completedFeatures[i].geometry.coordinates = coords;
+                completedChanged = true;
+            }
+        } else {
+            if (prevState === 2) {
+                completedFeatures[i].geometry.coordinates = [];
+                completedChanged = true;
+            }
+            tripStates[i] = 1;
+            
             const progress = (currentTime - startTs) / (endTs - startTs);
-            const pathLength = coords.length;
             const exactIndex = progress * (pathLength - 1);
             const lowerIndex = Math.floor(exactIndex);
-            const upperIndex = Math.min(lowerIndex + 1, pathLength - 1);
             const fraction = exactIndex - lowerIndex;
-            
-            // Interpolate exact marker position
             const p1 = coords[lowerIndex];
-            const p2 = coords[upperIndex];
-            const markerPos = [
+            const p2 = coords[Math.min(lowerIndex + 1, pathLength - 1)];
+            userPositions[meta.username] = [
                 p1[0] + (p2[0] - p1[0]) * fraction,
                 p1[1] + (p2[1] - p1[1]) * fraction
             ];
-            
-            // Polyline includes all points up to current + the interpolated point
-            visibleCoords = coords.slice(0, upperIndex + 1);
-            visibleCoords.push(markerPos);
-            
-            userPositions[props.username] = markerPos;
-        } else if (currentTime < startTs) {
-            visibleCoords = [];
-        } else {
-            visibleCoords = coords;
-            userPositions[props.username] = coords[coords.length - 1];
         }
+    }
 
-        updatedFeatures.push({
-            type: 'Feature',
-            geometry: { type: 'LineString', coordinates: visibleCoords.length > 1 ? visibleCoords : [[0, 0], [0, 0]] },
-            properties: props
-        });
-    });
+    if (completedChanged) {
+        completedSource.setData({ type: 'FeatureCollection', features: completedFeatures });
+    }
 
-    // Update source
-    map.getSource('trips').setData({ type: 'FeatureCollection', features: updatedFeatures });
+    drawActiveTrips();
 
-    // Update marker positions
-    Object.keys(userPositions).forEach(username => {
-        if (userMarkers[username]) {
-            userMarkers[username].marker.setLngLat(userPositions[username]);
+    const usernames = Object.keys(userMarkers);
+    for (let i = 0; i < usernames.length; i++) {
+        const username = usernames[i];
+        const pos = userPositions[username];
+        const marker = userMarkers[username];
+        if (pos) {
+            marker.marker.setLngLat(pos);
+            marker.el.style.opacity = '1';
+            marker.marker.getElement().style.pointerEvents = 'auto';
         }
-    });
+    }
 
-    // Group nearby markers
+    const posUsernames = Object.keys(userPositions);
     const groups = {};
-    const usernames = Object.keys(userPositions);
-
-    usernames.forEach((u1, i) => {
-        usernames.slice(i + 1).forEach(u2 => {
-            const p1 = userPositions[u1];
+    
+    for (let i = 0; i < posUsernames.length; i++) {
+        const u1 = posUsernames[i];
+        const p1 = userPositions[u1];
+        
+        for (let j = i + 1; j < posUsernames.length; j++) {
+            const u2 = posUsernames[j];
             const p2 = userPositions[u2];
-            if (p1 && p2) {
-                const dist = Math.sqrt(Math.pow(p1[0] - p2[0], 2) + Math.pow(p1[1] - p2[1], 2));
-                if (dist < 0.02) { // ~2km equivalent in degrees
-                    let found = false;
-                    Object.keys(groups).forEach(g => {
-                        if (groups[g].includes(u1) || groups[g].includes(u2)) {
-                            groups[g] = [...new Set([...groups[g], u1, u2])];
-                            found = true;
-                        }
-                    });
-                    if (!found) groups[`${u1}_${u2}`] = [u1, u2];
-                }
-            }
-        });
-    });
-
-    // Create pie markers for groups
-    Object.values(groups).forEach(group => {
-        if (group.length > 0) {
-            group.forEach(u => {
-                userMarkers[u].el.style.opacity = '0';
-                userMarkers[u].marker.getElement().style.pointerEvents = 'none';
-            });
-
-            const colors = group.map(u => userMarkers[u].color);
-            const el = document.createElement('div');
-            el.innerHTML = createPieSVG(colors);
-            el.style.cursor = 'pointer';
-
-            const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-                .setLngLat(userPositions[group[0]])
-                .setPopup(new maplibregl.Popup({ offset: 10 }).setText('Users: ' + group.join(', ')))
-                .addTo(map);
             
-            multiMarkers.push(marker);
+            const dx = p1[0] - p2[0];
+            const dy = p1[1] - p2[1];
+            if (dx * dx + dy * dy < 0.0004) {
+                let found = false;
+                for (const g in groups) {
+                    if (groups[g].includes(u1) || groups[g].includes(u2)) {
+                        if (!groups[g].includes(u1)) groups[g].push(u1);
+                        if (!groups[g].includes(u2)) groups[g].push(u2);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) groups[`${u1}_${u2}`] = [u1, u2];
+            }
         }
-    });
+    }
+
+    for (const key in groups) {
+        const group = groups[key];
+        for (let i = 0; i < group.length; i++) {
+            userMarkers[group[i]].el.style.opacity = '0';
+            userMarkers[group[i]].marker.getElement().style.pointerEvents = 'none';
+        }
+
+        const colors = group.map(u => userMarkers[u].color);
+        const el = document.createElement('div');
+        el.innerHTML = createPieSVG(colors);
+        el.style.cursor = 'pointer';
+
+        const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+            .setLngLat(userPositions[group[0]])
+            .setPopup(new maplibregl.Popup({ offset: 10 }).setText('Users: ' + group.join(', ')))
+            .addTo(map);
+        
+        multiMarkers.push(marker);
+    }
 }
 
 function createPieSVG(colors) {
