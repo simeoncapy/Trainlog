@@ -221,10 +221,14 @@ def get_wrapped_data(username, year, trip_type="combined"):
             {"user_id": user_id, "tripType": trip_type, "year": year}
         ).fetchone()
         
+        print(percentile_result)
         if percentile_result and percentile_result.total_users > 1:
+            km_percentile = float(percentile_result.km_percentile)
+            trips_percentile = float(percentile_result.trips_percentile)
+
             wrapped["percentile"] = {
-                "km": int(percentile_result.km_percentile),
-                "trips": int(percentile_result.trips_percentile),
+                "km": round(km_percentile, 2) if km_percentile > 98 else int(round(km_percentile)),
+                "trips": round(trips_percentile, 2) if trips_percentile > 98 else int(round(trips_percentile)),
                 "total_users": int(percentile_result.total_users),
             }
         else:

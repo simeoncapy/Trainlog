@@ -10,16 +10,20 @@ WITH base_filter AS (
 ),
 country_data AS (
     SELECT 
-        jsonb_object_keys(countries::jsonb) AS country_code,
-        trip_length,
-        trip_id
-    FROM base_filter
+        key AS country_code,
+        trip_id,
+        CASE 
+            WHEN jsonb_typeof(value) = 'number' THEN value::numeric
+            ELSE (value->>'elec')::numeric + COALESCE((value->>'nonelec')::numeric, 0)
+        END AS country_km
+    FROM base_filter,
+    LATERAL jsonb_each(countries::jsonb)
 ),
 country_totals AS (
     SELECT 
         country_code,
         COUNT(DISTINCT trip_id) AS trips,
-        SUM(trip_length) AS total_km
+        SUM(country_km) AS total_km
     FROM country_data
     GROUP BY country_code
     ORDER BY total_km DESC, trips DESC

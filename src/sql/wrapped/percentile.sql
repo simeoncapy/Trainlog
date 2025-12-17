@@ -22,8 +22,8 @@ with_percentiles AS (
 SELECT 
     total_km,
     total_trips,
-    ROUND(km_percentile * 100) AS km_percentile,
-    ROUND(trips_percentile * 100) AS trips_percentile,
+    km_percentile * 100 AS km_percentile,
+    trips_percentile * 100 AS trips_percentile,
     (SELECT COUNT(DISTINCT user_id) FROM user_totals) AS total_users
 FROM with_percentiles
 WHERE user_id = :user_id
