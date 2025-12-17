@@ -695,5 +695,14 @@
     "morning": "아침",
     "afternoon": "오후",
     "evening": "저녁",
-    "night": "밤"
+    "night": "밤",
+    "wrapped_exploration": "탐험",
+    "wrapped_countries": "방문한 국가",
+    "wrapped_borders": "국경 횡단",
+    "wrapped_share_your_year": "당신의 연도를 공유하세요",
+    "wrapped_download_image": "이미지 다운로드",
+    "wrapped_generating": "생성 중...",
+    "wrapped_download_error": "이미지 생성 오류. 다시 시도해 주세요.",
+    "wrapped_stations": "역들",
+    "wrapped_share_image": "공유하기"
 }

@@ -695,5 +695,14 @@
     "morning": "ранок",
     "afternoon": "післяобідній час",
     "evening": "вечір",
-    "night": "ніч"
+    "night": "ніч",
+    "wrapped_exploration": "Дослідження",
+    "wrapped_countries": "Відвідані країни",
+    "wrapped_borders": "Перетини кордону",
+    "wrapped_share_your_year": "Поділіться своїм роком",
+    "wrapped_download_image": "Завантажити зображення",
+    "wrapped_generating": "Генерація...",
+    "wrapped_download_error": "Помилка під час генерації зображення. Будь ласка, спробуйте ще раз.",
+    "wrapped_stations": "станції",
+    "wrapped_share_image": "Поділитися"
 }

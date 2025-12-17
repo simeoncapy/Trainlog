@@ -64,6 +64,7 @@
         font-weight: 800;
         line-height: 1;
         margin: 15px 0;
+        text-transform:capitalize;
     }
     
     .stat-label {
@@ -168,6 +169,7 @@
     }
     
     .flag { font-size: 1.5rem; margin-right: 10px; }
+    .flagPNG {vertical-align: 0px;}
     .logo-text {
         background: rgba(255, 255, 255, 0.95);
         padding: 12px 16px;
@@ -206,6 +208,166 @@
     
     .stats-grid .stat-card { margin: 0; padding: 20px; }
     .stats-grid .stat-card-number { font-size: 2rem; }
+    
+    /* Shareable Recap Card */
+    .recap-card {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 24px;
+        padding: 30px;
+        width: 100%;
+        max-width: 380px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .recap-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-image: url("/static/images/logo_square.png");
+        background-size: 60px 60px;
+        background-repeat: repeat;
+        opacity: 0.03;
+        pointer-events: none;
+    }
+    
+    .recap-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        position: relative;
+        z-index: 1;
+    }
+    
+    .recap-logo {
+        height: 50px;
+        width: auto;
+    }
+    
+    .recap-year-badge {
+        background: var(--accent);
+        color: white;
+        font-size: 1.5rem;
+        font-weight: 800;
+        padding: 8px 20px;
+        border-radius: 20px;
+    }
+    
+    .recap-username {
+        font-size: 1.4rem;
+        font-weight: 600;
+        margin-bottom: 25px;
+        opacity: 0.9;
+        position: relative;
+        z-index: 1;
+    }
+    
+    .recap-main-stats {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 25px;
+        position: relative;
+        z-index: 1;
+    }
+    
+    .recap-stat-big {
+        text-align: center;
+        flex: 1;
+        background: linear-gradient(180deg, rgba(233, 69, 96, 0.3) 0%, rgba(233, 69, 96, 0.1) 100%);
+        border-radius: 12px;
+        padding: 15px 10px;
+        margin: 0 5px;
+    }
+    
+    .recap-stat-big .recap-number {
+        display: block;
+        font-size: 2.2rem;
+        font-weight: 800;
+        color: white;
+        line-height: 1.2;
+    }
+    
+    .recap-stat-big .recap-label {
+        display: block;
+        font-size: 0.75rem;
+        opacity: 0.7;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-top: 5px;
+    }
+    
+    .recap-secondary-stats {
+        display: flex;
+        justify-content: space-around;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        padding: 15px;
+        margin-bottom: 20px;
+        position: relative;
+        z-index: 1;
+    }
+    
+    .recap-stat-small {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85rem;
+        opacity: 0.9;
+    }
+    
+    .recap-stat-small i {
+        color: var(--accent);
+    }
+    
+    .recap-countries {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        margin-bottom: 20px;
+        position: relative;
+        z-index: 1;
+    }
+    
+    .recap-flag {
+        width: 36px;
+        height: 24px;
+        border-radius: 4px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+    
+    .recap-footer {
+        text-align: center;
+        font-size: 0.9rem;
+        opacity: 0.5;
+        position: relative;
+        z-index: 1;
+    }
+    
+    .share-button {
+        margin-top: 25px;
+        background: var(--accent);
+        color: white;
+        border: none;
+        padding: 15px 30px;
+        border-radius: 30px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .share-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 30px rgba(233, 69, 96, 0.4);
+    }
     
     .year-selector {
         position: fixed;
@@ -417,33 +579,25 @@
         <!-- Top Countries -->
         {% if data.top_countries %}
         <div class="slide slide-top">
-            <div class="section-title">{{ wrapped_countries_visited or "Countries visited" }}</div>
-            <div class="big-number">{{ data.country_count }}</div>
+            <div class="section-title">{{ wrapped_exploration or "Exploration" }}</div>
+            <div class="stats-grid" style="margin-bottom: 30px;">
+                <div class="stat-card">
+                    <div class="stat-card-number">{{ data.country_count }}</div>
+                    <div class="stat-card-label">{{ wrapped_countries or "Countries" }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-number">~{{ data.border_crossings }}</div>
+                    <div class="stat-card-label">{{ wrapped_borders or "Borders" }}</div>
+                </div>
+            </div>
             <div class="divider"></div>
             <div class="top-list">
                 {% for country in data.top_countries %}
                 <div class="top-item">
                     <span class="top-rank">{{ loop.index }}</span>
-                    <span class="flag">{{ country.code }}</span>
-                    <span class="top-name">{{ country.code }}</span>
-                    <span class="top-value">{{ "{:,}".format(country.km) }} km</span>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-        
-        <!-- Top Operators -->
-        {% if data.top_operators %}
-        <div class="slide slide-stats">
-            <div class="section-title">{{ wrapped_favorite_operators or "Your favorite operators" }}</div>
-            <div class="divider"></div>
-            <div class="top-list">
-                {% for op in data.top_operators %}
-                <div class="top-item">
-                    <span class="top-rank">{{ loop.index }}</span>
-                    <span class="top-name">{{ op.name }}</span>
-                    <span class="top-value">{{ op.trips }} {{ trips or "trips" }}</span>
+                    <span class="flag"><img class="flagPNG" src="/static/images/flags/{{ country.code|lower }}.svg" alt="{{ country.code }} flag"/></span>
+                    <span class="top-name" data-country="{{ country.code }}"></span>
+                    <span class="top-value" data-km="{{ country.km }}"></span>
                 </div>
                 {% endfor %}
             </div>
@@ -470,23 +624,6 @@
                     <span class="top-rank">{{ loop.index }}</span>
                     <span class="top-name">{{ route.name }}</span>
                     <span class="top-value">{{ route.count }}×</span>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-        
-        <!-- Top Material -->
-        {% if data.top_material %}
-        <div class="slide slide-stats">
-            <div class="section-title">{{ wrapped_train_types or "Train types used" }}</div>
-            <div class="divider"></div>
-            <div class="top-list">
-                {% for m in data.top_material %}
-                <div class="top-item">
-                    <span class="top-rank">{{ loop.index }}</span>
-                    <span class="top-name">{{ m.name }}</span>
-                    <span class="top-value">{{ m.trips }} {{ trips or "trips" }}</span>
                 </div>
                 {% endfor %}
             </div>
@@ -727,6 +864,75 @@
             </p>
         </div>
         
+        <!-- Shareable Recap Card -->
+        <div class="slide slide-stats">
+            <div class="section-title">{{ wrapped_share_your_year or "Share your year" }}</div>
+            
+            <div id="recap-card" class="recap-card">
+                <div class="recap-header">
+                    <img
+                        src="{{ url_for('static', filename='images/logo_white.png') }}"
+                        alt="Trainlog"
+                        class="recap-logo"
+                    >
+                    <div class="recap-year-badge">{{ data.year }}</div>
+                </div>
+                
+                <div class="recap-username">{{ data.username }}</div>
+                
+                <div class="recap-main-stats">
+                    <div class="recap-stat-big">
+                        <span class="recap-number" data-intl-number="{{ data.total_trips }}">{{ data.total_trips }}</span>
+                        <span class="recap-label">{{ trips or "Trips" }}</span>
+                    </div>
+                    <div class="recap-stat-big">
+                        <span class="recap-number" data-intl-number="{{ data.total_km }}">{{ data.total_km }}</span>
+                        <span class="recap-label">km</span>
+                    </div>
+                    <div class="recap-stat-big">
+                        <span class="recap-number">{{ data.country_count }}</span>
+                        <span class="recap-label">{{ wrapped_countries_visited or "Countries" }}</span>
+                    </div>
+                </div>
+                
+                <div class="recap-secondary-stats">
+                    <div class="recap-stat-small">
+                        <i class="fa-solid fa-clock"></i>
+                        <span><span data-intl-number="{{ data.duration_hours }}">{{ data.duration_hours }}</span>h</span>
+                    </div>
+                    <div class="recap-stat-small">
+                        <i class="fa-solid fa-location-dot"></i>
+                        <span><span data-intl-number="{{ data.unique_stations }}">{{ data.unique_stations }}</span> {{ wrapped_stations or "stations" }}</span>
+                    </div>
+                    <div class="recap-stat-small">
+                        <i class="fa-solid fa-leaf"></i>
+                        <span><span data-intl-number="{{ data.total_co2 }}">{{ data.total_co2|int }}</span> kg CO₂</span>
+                    </div>
+                </div>
+                
+                {% if data.top_countries %}
+                <div class="recap-countries">
+                    {% for country in data.top_countries[:3] %}
+                    <img 
+                        src="/static/images/flags/{{ country.code|lower }}.svg" 
+                        alt="{{ country.code }}"
+                        class="recap-flag"
+                    >
+                    {% endfor %}
+                </div>
+                {% endif %}
+                
+                <div class="recap-footer">
+                    <span>trainlog.me</span>
+                </div>
+            </div>
+            
+            <button id="download-recap" class="share-button">
+                <i class="fa-solid fa-download"></i>
+                {{ wrapped_download_image or "Download image" }}
+            </button>
+        </div>
+        
     </div>
     
     <script>
@@ -786,6 +992,17 @@
                 if (formatted) el.textContent = formatted;
             });
 
+            document.addEventListener('DOMContentLoaded', () => {
+                const button = document.getElementById('download-recap');
+
+                if (navigator.share && navigator.canShare) {
+                    button.innerHTML = `
+                        <i class="fa-solid fa-share-nodes"></i>
+                        {{ wrapped_share_image or "Share image" }}
+                    `;
+                }
+            });
+
             document.querySelectorAll("[data-intl-month]").forEach((el) => {
                 const formatted = formatMonthFromNumber(
                     el.getAttribute("data-month"),
@@ -802,7 +1019,78 @@
                 const formatted = formatDate(iso, fmt, locale);
                 if (formatted) el.textContent = formatted;
             });
+
+            document.querySelectorAll('.top-name').forEach(el => {
+                const code = el.dataset.country;
+                el.textContent = new Intl.DisplayNames(['{{lang}}'], { type: 'region' }).of(code);
+            });
+
+            document.querySelectorAll('.top-value').forEach(el => {
+                const km = el.dataset.km;
+                el.textContent = new Intl.NumberFormat('{{lang}}').format(km) + ' km';
+            });
+            
+            document.querySelectorAll('[data-intl-number]').forEach(el => {
+                const num = Number(el.getAttribute('data-intl-number'));
+                if (Number.isFinite(num)) {
+                    el.textContent = new Intl.NumberFormat('{{lang}}').format(num);
+                }
+            });
         })();
+    </script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script>
+        document.getElementById('download-recap').addEventListener('click', async function() {
+            const card = document.getElementById('recap-card');
+            const button = this;
+
+            button.disabled = true;
+            button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> {{ wrapped_generating or "Generating..." }}';
+
+            try {
+                const canvas = await html2canvas(card, {
+                    scale: 4,
+                    backgroundColor: null,
+                    useCORS: true,
+                    allowTaint: true,
+                    logging: false
+                });
+
+                const blob = await new Promise(resolve =>
+                    canvas.toBlob(resolve, 'image/png')
+                );
+
+                const file = new File(
+                    [blob],
+                    'trainlog-wrapped-{{ data.year }}.png',
+                    { type: 'image/png' }
+                );
+
+                // ✅ Native share on mobile
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                        files: [file],
+                        title: 'Trainlog Wrapped {{ data.year }}',
+                        text: 'My Trainlog Wrapped {{ data.year }}'
+                    });
+                } else {
+                    // 🖥️ Fallback: download
+                    const link = document.createElement('a');
+                    link.download = file.name;
+                    link.href = URL.createObjectURL(blob);
+                    link.click();
+                    URL.revokeObjectURL(link.href);
+                }
+
+            } catch (error) {
+                console.error('Error generating image:', error);
+                alert('{{ wrapped_download_error or "Error generating image. Please try again." }}');
+            }
+
+            button.disabled = false;
+            button.innerHTML = '<i class="fa-solid fa-download"></i> {{ wrapped_download_image or "Download image" }}';
+        });
     </script>
     
     {% else %}

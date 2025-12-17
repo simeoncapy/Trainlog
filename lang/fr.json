@@ -695,5 +695,14 @@
     "morning": "matin",
     "afternoon": "après-midi",
     "evening": "soir",
-    "night": "nuit"
+    "night": "nuit",
+    "wrapped_exploration": "Exploration",
+    "wrapped_countries": "Pays visités",
+    "wrapped_borders": "Passages de frontière",
+    "wrapped_share_your_year": "Partagez votre année",
+    "wrapped_download_image": "Télécharger l'image",
+    "wrapped_generating": "Génération...",
+    "wrapped_download_error": "Erreur lors de la génération de l'image. Veuillez réessayer.",
+    "wrapped_stations": "gares",
+    "wrapped_share_image": "Partager"
 }

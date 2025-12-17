@@ -695,5 +695,14 @@
     "morning": "ráno",
     "afternoon": "odpoledne",
     "evening": "večer",
-    "night": "noc"
+    "night": "noc",
+    "wrapped_exploration": "Průzkum",
+    "wrapped_countries": "Navštívené země",
+    "wrapped_borders": "Přechody hranic",
+    "wrapped_share_your_year": "Poděl se o svůj rok",
+    "wrapped_download_image": "Stáhnout obrázek",
+    "wrapped_generating": "Generování...",
+    "wrapped_download_error": "Chyba při generování obrázku. Prosím zkuste to znovu.",
+    "wrapped_stations": "Stanice",
+    "wrapped_share_image": "Sdílet"
 }

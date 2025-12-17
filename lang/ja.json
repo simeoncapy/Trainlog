@@ -695,5 +695,14 @@
     "morning": "朝",
     "afternoon": "午後",
     "evening": "夕方",
-    "night": "夜"
+    "night": "夜",
+    "wrapped_exploration": "探検",
+    "wrapped_countries": "訪問した国",
+    "wrapped_borders": "国境越え",
+    "wrapped_share_your_year": "あなたの年を共有する",
+    "wrapped_download_image": "画像をダウンロード",
+    "wrapped_generating": "生成中...",
+    "wrapped_download_error": "画像の生成エラー。もう一度お試しください。",
+    "wrapped_stations": "駅",
+    "wrapped_share_image": "共有する"
 }

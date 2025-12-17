@@ -695,5 +695,14 @@
     "morning": "утро",
     "afternoon": "день",
     "evening": "вечер",
-    "night": "ночь"
+    "night": "ночь",
+    "wrapped_exploration": "Исследование",
+    "wrapped_countries": "Посещенные страны",
+    "wrapped_borders": "Пересечения границы",
+    "wrapped_share_your_year": "Поделитесь вашим годом",
+    "wrapped_download_image": "Скачать изображение",
+    "wrapped_generating": "Генерация...",
+    "wrapped_download_error": "Ошибка при генерации изображения. Пожалуйста, попробуйте еще раз.",
+    "wrapped_stations": "Станции",
+    "wrapped_share_image": "Поделиться"
 }

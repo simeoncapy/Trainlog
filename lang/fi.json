@@ -695,5 +695,14 @@
     "morning": "aamu",
     "afternoon": "iltapäivä",
     "evening": "ilta",
-    "night": "yö"
+    "night": "yö",
+    "wrapped_exploration": "Tutkimus",
+    "wrapped_countries": "Vierailtavat maat",
+    "wrapped_borders": "Rajan ylitykset",
+    "wrapped_share_your_year": "Jaa vuotesi",
+    "wrapped_download_image": "Lataa kuvaa",
+    "wrapped_generating": "Luodaan...",
+    "wrapped_download_error": "Virhe kuvan luomisessa. Yritä uudelleen.",
+    "wrapped_stations": "Asemat",
+    "wrapped_share_image": "Jaa"
 }

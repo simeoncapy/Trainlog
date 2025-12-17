@@ -695,5 +695,14 @@
     "morning": "morgen",
     "afternoon": "ettermiddag",
     "evening": "kveld",
-    "night": "natt"
+    "night": "natt",
+    "wrapped_exploration": "Utforskning",
+    "wrapped_countries": "Besøkte land",
+    "wrapped_borders": "Grenseoverganger",
+    "wrapped_share_your_year": "Del året ditt",
+    "wrapped_download_image": "Last ned bilde",
+    "wrapped_generating": "Genererer...",
+    "wrapped_download_error": "Feil ved generering av bilde. Vennligst prøv igjen.",
+    "wrapped_stations": "stasjoner",
+    "wrapped_share_image": "Del"
 }

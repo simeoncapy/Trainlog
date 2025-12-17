@@ -695,5 +695,14 @@
     "morning": "早晨",
     "afternoon": "下午",
     "evening": "傍晚",
-    "night": "夜晚"
+    "night": "夜晚",
+    "wrapped_exploration": "探索",
+    "wrapped_countries": "访问过的国家",
+    "wrapped_borders": "边境通行",
+    "wrapped_share_your_year": "分享你的年度",
+    "wrapped_download_image": "下载图片",
+    "wrapped_generating": "生成中...",
+    "wrapped_download_error": "生成图片时出错。请再试一次。",
+    "wrapped_stations": "车站",
+    "wrapped_share_image": "分享"
 }

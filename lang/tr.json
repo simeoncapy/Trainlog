@@ -695,5 +695,14 @@
     "morning": "sabah",
     "afternoon": "öğleden sonra",
     "evening": "akşam",
-    "night": "gece"
+    "night": "gece",
+    "wrapped_exploration": "Keşif",
+    "wrapped_countries": "Ziyaret edilen ülkeler",
+    "wrapped_borders": "Sınır geçişleri",
+    "wrapped_share_your_year": "Yılınızı paylaşın",
+    "wrapped_download_image": "Görüntüyü indir",
+    "wrapped_generating": "Oluşturuluyor...",
+    "wrapped_download_error": "Görüntü oluşturulurken hata. Lütfen tekrar deneyin.",
+    "wrapped_stations": "istasyonlar",
+    "wrapped_share_image": "Paylaş"
 }

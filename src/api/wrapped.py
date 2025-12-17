@@ -230,7 +230,33 @@ def get_wrapped_data(username, year, trip_type="combined"):
         else:
             wrapped["percentile"] = None
     
-    # Use existing fetch_stats for operators, countries, routes, material
+        # Get countries data directly
+        countries_result = pg.execute(
+            wrapped_sql.countries(),
+            {"user_id": user_id, "tripType": trip_type, "year": year}
+        ).fetchall()
+        
+        wrapped["top_countries"] = []
+        for row in countries_result[:5]:
+            wrapped["top_countries"].append({
+                "code": row.country_code,
+                "km": int(row.total_km / 1000),
+                "trips": int(row.trips)
+            })
+        wrapped["country_count"] = len(countries_result)
+        
+        # Get border crossings
+        crossings_result = pg.execute(
+            wrapped_sql.border_crossings(),
+            {"user_id": user_id, "tripType": trip_type, "year": year}
+        ).fetchone()
+        
+        if crossings_result and crossings_result.total_border_crossings:
+            wrapped["border_crossings"] = int(crossings_result.total_border_crossings)
+        else:
+            wrapped["border_crossings"] = 0
+    
+    # Use existing fetch_stats for operators, routes, material
     stats = fetch_stats(username, trip_type, year)
     
     # Top 5 operators
@@ -240,19 +266,6 @@ def get_wrapped_data(username, year, trip_type="combined"):
         for op in operators[:5]
         if op.get("operator")
     ]
-    
-    # Top 5 countries
-    countries = stats.get("countries", [])
-    wrapped["top_countries"] = [
-        {
-            "code": c["country"],
-            "km": int(c.get("pastKm", 0) / 1000),
-            "trips": int(c.get("pastTrips", 0))
-        }
-        for c in countries[:5]
-        if c.get("country")
-    ]
-    wrapped["country_count"] = len(countries)
     
     # Top 3 routes
     routes = stats.get("routes", [])
@@ -309,7 +322,9 @@ def get_wrapped_data(username, year, trip_type="combined"):
 def wrapped(username, year=None):
     """Render the wrapped page for a user."""
     if year is None:
-        year = str(datetime.now().year)
+        # "Wrapped" year: switches on Nov 26 (Dec → next year's wrapped)
+        now = datetime.now()
+        year = str(now.year if (now.month, now.day) >= (11, 26) else now.year - 1)
     
     # Check if year has data
     available_years = get_distinct_stat_years(username, "combined")

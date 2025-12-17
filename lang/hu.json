@@ -695,5 +695,14 @@
     "morning": "reggel",
     "afternoon": "délután",
     "evening": "este",
-    "night": "éjszaka"
+    "night": "éjszaka",
+    "wrapped_exploration": "Felfedezés",
+    "wrapped_countries": "Látogatott országok",
+    "wrapped_borders": "Határátkelések",
+    "wrapped_share_your_year": "Oszd meg az éved",
+    "wrapped_download_image": "Kép letöltése",
+    "wrapped_generating": "Generálás...",
+    "wrapped_download_error": "Hiba a kép generálásakor. Kérlek, próbáld újra.",
+    "wrapped_stations": "állomások",
+    "wrapped_share_image": "Megosztás"
 }

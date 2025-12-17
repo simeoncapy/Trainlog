@@ -695,5 +695,14 @@
     "morning": "jutro",
     "afternoon": "poslijepodne",
     "evening": "večer",
-    "night": "noć"
+    "night": "noć",
+    "wrapped_exploration": "Istraživanje",
+    "wrapped_countries": "Posjećene zemlje",
+    "wrapped_borders": "Granični prijelazi",
+    "wrapped_share_your_year": "Podijeli svoju godinu",
+    "wrapped_download_image": "Preuzmi sliku",
+    "wrapped_generating": "Generiranje...",
+    "wrapped_download_error": "Pogreška pri generiranju slike. Molimo pokušajte ponovo.",
+    "wrapped_stations": "stanice",
+    "wrapped_share_image": "Podijeli"
 }

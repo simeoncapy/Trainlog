@@ -695,5 +695,14 @@
     "morning": "ochtend",
     "afternoon": "middag",
     "evening": "avond",
-    "night": "nacht"
+    "night": "nacht",
+    "wrapped_exploration": "Verkenning",
+    "wrapped_countries": "Bezochte landen",
+    "wrapped_borders": "Grensovergangen",
+    "wrapped_share_your_year": "Deel je jaar",
+    "wrapped_download_image": "Afbeelding downloaden",
+    "wrapped_generating": "Genereren...",
+    "wrapped_download_error": "Fout bij het genereren van afbeelding. Probeer het alstublieft opnieuw.",
+    "wrapped_stations": "Stations",
+    "wrapped_share_image": "Delen"
 }

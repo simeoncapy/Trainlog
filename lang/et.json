@@ -695,5 +695,14 @@
     "morning": "hommik",
     "afternoon": "pärastlõuna",
     "evening": "õhtu",
-    "night": "öö"
+    "night": "öö",
+    "wrapped_exploration": "Uurimine",
+    "wrapped_countries": "Külastatud riigid",
+    "wrapped_borders": "Piiriületused",
+    "wrapped_share_your_year": "Jaga oma aastat",
+    "wrapped_download_image": "Pilt alla laadida",
+    "wrapped_generating": "Genereerimine...",
+    "wrapped_download_error": "Viga pildi genereerimisel. Palun proovi uuesti.",
+    "wrapped_stations": "Jaamad",
+    "wrapped_share_image": "Jaga"
 }
