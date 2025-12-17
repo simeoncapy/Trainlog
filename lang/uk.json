@@ -705,5 +705,6 @@
     "wrapped_download_error": "Помилка під час генерації зображення. Будь ласка, спробуйте ще раз.",
     "wrapped_stations": "станції",
     "wrapped_share_image": "Поділитися",
-    "wrapped_trips": "подорожі"
+    "wrapped_trips": "подорожі",
+    "wrapped_kilometers": "кілометри"
 }

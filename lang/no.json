@@ -705,5 +705,6 @@
     "wrapped_download_error": "Feil ved generering av bilde. Vennligst prøv igjen.",
     "wrapped_stations": "stasjoner",
     "wrapped_share_image": "Del",
-    "wrapped_trips": "turer"
+    "wrapped_trips": "turer",
+    "wrapped_kilometers": "kilometer"
 }

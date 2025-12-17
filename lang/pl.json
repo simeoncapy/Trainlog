@@ -705,5 +705,6 @@
     "wrapped_download_error": "Błąd podczas generowania obrazu. Proszę spróbować ponownie.",
     "wrapped_stations": "Stacje",
     "wrapped_share_image": "Udostępnij",
-    "wrapped_trips": "podróże"
+    "wrapped_trips": "podróże",
+    "wrapped_kilometers": "kilometry"
 }

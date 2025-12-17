@@ -705,5 +705,6 @@
     "wrapped_download_error": "Fout bij het genereren van afbeelding. Probeer het alstublieft opnieuw.",
     "wrapped_stations": "Stations",
     "wrapped_share_image": "Delen",
-    "wrapped_trips": "reizen"
+    "wrapped_trips": "reizen",
+    "wrapped_kilometers": "kilometers"
 }

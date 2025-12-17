@@ -705,5 +705,6 @@
     "wrapped_download_error": "画像の生成エラー。もう一度お試しください。",
     "wrapped_stations": "駅",
     "wrapped_share_image": "共有する",
-    "wrapped_trips": "旅行"
+    "wrapped_trips": "旅行",
+    "wrapped_kilometers": "キロメートル"
 }

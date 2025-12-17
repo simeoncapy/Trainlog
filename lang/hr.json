@@ -705,5 +705,6 @@
     "wrapped_download_error": "Pogreška pri generiranju slike. Molimo pokušajte ponovo.",
     "wrapped_stations": "stanice",
     "wrapped_share_image": "Podijeli",
-    "wrapped_trips": "putovanja"
+    "wrapped_trips": "putovanja",
+    "wrapped_kilometers": "kilometri"
 }

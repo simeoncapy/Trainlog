@@ -705,5 +705,6 @@
     "wrapped_download_error": "Fel vid bildgenerering. Vänligen försök igen.",
     "wrapped_stations": "Stationer",
     "wrapped_share_image": "Dela",
-    "wrapped_trips": "resor"
+    "wrapped_trips": "resor",
+    "wrapped_kilometers": "kilometer"
 }

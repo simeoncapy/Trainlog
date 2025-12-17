@@ -705,5 +705,6 @@
     "wrapped_download_error": "Fähler bim Generiere vom Bild. Bitte nomol versueche.",
     "wrapped_stations": "Statione",
     "wrapped_share_image": "Teile",
-    "wrapped_trips": "Resie"
+    "wrapped_trips": "Resie",
+    "wrapped_kilometers": "Kilometer"
 }

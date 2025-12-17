@@ -705,5 +705,6 @@
     "wrapped_download_error": "Görüntü oluşturulurken hata. Lütfen tekrar deneyin.",
     "wrapped_stations": "istasyonlar",
     "wrapped_share_image": "Paylaş",
-    "wrapped_trips": "geziler"
+    "wrapped_trips": "geziler",
+    "wrapped_kilometers": "kilometreler"
 }

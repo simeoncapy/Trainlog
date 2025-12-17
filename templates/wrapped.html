@@ -502,7 +502,7 @@
         <div class="slide slide-top">
             <div class="section-title">{{ wrapped_you_traveled or "You traveled" }}</div>
             <div class="big-number">{{ "{:,}".format(data.total_km) }}</div>
-            <div class="stat-label">{{ km or "Kilometers" }}</div>
+            <div class="stat-label">{{ wrapped_kilometers or "Kilometers" }}</div>
             
             {% if data.distance_comparisons %}
             <div style="margin-top: 30px;">

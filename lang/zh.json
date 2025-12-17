@@ -705,5 +705,6 @@
     "wrapped_download_error": "生成图片时出错。请再试一次。",
     "wrapped_stations": "车站",
     "wrapped_share_image": "分享",
-    "wrapped_trips": "旅行"
+    "wrapped_trips": "旅行",
+    "wrapped_kilometers": "公里"
 }

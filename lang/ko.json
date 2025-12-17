@@ -705,5 +705,6 @@
     "wrapped_download_error": "이미지 생성 오류. 다시 시도해 주세요.",
     "wrapped_stations": "역들",
     "wrapped_share_image": "공유하기",
-    "wrapped_trips": "여행"
+    "wrapped_trips": "여행",
+    "wrapped_kilometers": "킬로미터"
 }

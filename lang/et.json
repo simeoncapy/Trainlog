@@ -705,5 +705,6 @@
     "wrapped_download_error": "Viga pildi genereerimisel. Palun proovi uuesti.",
     "wrapped_stations": "Jaamad",
     "wrapped_share_image": "Jaga",
-    "wrapped_trips": "reisid"
+    "wrapped_trips": "reisid",
+    "wrapped_kilometers": "kilomeetrid"
 }

@@ -705,5 +705,6 @@
     "wrapped_download_error": "Hiba a kép generálásakor. Kérlek, próbáld újra.",
     "wrapped_stations": "állomások",
     "wrapped_share_image": "Megosztás",
-    "wrapped_trips": "utazások"
+    "wrapped_trips": "utazások",
+    "wrapped_kilometers": "kilométerek"
 }

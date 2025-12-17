@@ -705,5 +705,6 @@
     "wrapped_download_error": "Chyba při generování obrázku. Prosím zkuste to znovu.",
     "wrapped_stations": "Stanice",
     "wrapped_share_image": "Sdílet",
-    "wrapped_trips": "výlety"
+    "wrapped_trips": "výlety",
+    "wrapped_kilometers": "kilometry"
 }
