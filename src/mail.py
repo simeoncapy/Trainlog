@@ -13,6 +13,7 @@ from datetime import datetime
 from py.utils import load_config, getCountryFromCoordinates, get_flag_emoji, getDistance
 from src.trips import Trip, create_trip
 from src.users import User
+from src.consts import Env
 
 logger = logging.getLogger(__name__)
 _app = None
