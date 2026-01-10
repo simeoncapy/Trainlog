@@ -22,8 +22,18 @@ def get_email_body(msg):
     if msg.is_multipart():
         for part in msg.walk():
             if part.get_content_type() == "text/plain":
-                return part.get_payload(decode=True).decode(errors="ignore")
-    return msg.get_payload(decode=True).decode(errors="ignore")
+                payload = part.get_payload(decode=True)
+                if payload:
+                    return payload.decode(errors="ignore")
+            elif part.get_content_type() == "text/html":
+                payload = part.get_payload(decode=True)
+                if payload:
+                    return payload.decode(errors="ignore")
+    else:
+        payload = msg.get_payload(decode=True)
+        if payload:
+            return payload.decode(errors="ignore")
+    return ""
 
 def get_user_from_sender(sender_raw):
     _, email_address = parseaddr(sender_raw)
