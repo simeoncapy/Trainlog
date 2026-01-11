@@ -65,31 +65,63 @@ def get_airport_by_iata(iata):
             return dict(result)
     return None
 
-def geocode_station(query):
+def geocode_station(query, trip_type="train"):
+    from py.utils import getCountryFromCoordinates
+    
+    osm_tags = {
+        "bus": ["amenity:bus_station", "highway:bus_stop"],
+        "train": ["railway:halt", "railway:station"],
+        "tram": ["railway:tram_stop", "railway:station", "railway:halt"],
+        "metro": ["railway:station", "railway:subway_entrance"],
+        "ferry": ["amenity:ferry_terminal"],
+        "helicopter": ["aeroway:helipad", "aeroway:heliport", "aeroway:aerodrome"],
+        "accommodation": ["tourism:alpine_hut", "tourism:apartment", "tourism:chalet", "tourism:guest_house", "tourism:hostel", "tourism:hotel", "tourism:motel", "tourism:wilderness_hut"],
+        "restaurant": ["amenity:restaurant", "amenity:pub", "amenity:biergarten", "amenity:cafe", "amenity:bar"],
+        "aerialway": ["aerialway:station"],
+    }
+    
+    komoot = "https://photon.komoot.io/api"
+    chiel = "https://photon.chiel.uk/api"
+    timeout = 2
+    
+    params = [("q", query), ("limit", 1), ("lang", "en")]
+    for tag in osm_tags.get(trip_type, []):
+        params.append(("osm_tag", tag))
+    
     try:
-        response = requests.get(
-            "https://photon.komoot.io/api",
-            params={"q": query, "limit": 1, "lang": "en"},
-            timeout=5
-        )
+        response = requests.get(chiel, params=params, timeout=timeout)
         data = response.json()
-        if data.get("features"):
-            feat = data["features"][0]
-            props = feat["properties"]
-            lon, lat = feat["geometry"]["coordinates"]
-            country_code = props.get("countrycode", "")
-            if not country_code:
-                country = getCountryFromCoordinates(lat, lon)
-                country_code = country.get("countryCode", "")
-            return {
-                "name": props.get("name", query),
-                "lat": lat,
-                "lng": lon,
-                "country_code": country_code
-            }
-    except Exception as e:
-        logger.error(f"Geocoding error: {e}")
-    return None
+    except Exception:
+        try:
+            response = requests.get(komoot, params=params, timeout=timeout)
+            data = response.json()
+        except Exception as e:
+            logger.error(f"Geocoding error: {e}")
+            return None
+    
+    if not data.get("features"):
+        return None
+    
+    feat = data["features"][0]
+    props = feat["properties"]
+    lon, lat = feat["geometry"]["coordinates"]
+    
+    country_code = props.get("countrycode", "")
+    if not country_code or country_code in ["CN", "FI"]:
+        country = getCountryFromCoordinates(lat, lon)
+        country_code = country.get("countryCode", "")
+    
+    name = props.get("name", query)
+    city = props.get("city")
+    if city and city.lower() not in name.lower():
+        name = f"{city} - {name}"
+    
+    return {
+        "name": name,
+        "lat": lat,
+        "lng": lon,
+        "country_code": country_code
+    }
 
 def parse_ticket_with_ai(subject, body, user_lang="en"):
     config = load_config()
