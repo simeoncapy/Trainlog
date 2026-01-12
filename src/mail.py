@@ -140,7 +140,7 @@ def geocode_station(query, trip_type="train", fallback_coords=None):
     
     komoot = "https://photon.komoot.io/api"
     chiel = "https://photon.chiel.uk/api"
-    timeout = 2
+    timeout = 10
     
     params = [("q", query), ("limit", 1), ("lang", "en")]
     for tag in osm_tags.get(trip_type, []):
@@ -195,7 +195,7 @@ def geocode_station(query, trip_type="train", fallback_coords=None):
 
 def parse_ticket_with_ai(subject, body, user_lang="en", ics_events=None, pdf_texts=None):
     config = load_config()
-    api_key = config.get("mistral", {}).get("api_key")
+    api_key = config.get("infomaniak_ai", {}).get("api_key")
     if not api_key:
         logger.error("No Mistral API key found")
         return None
@@ -262,13 +262,13 @@ Body: {body}{attachment_info}"""
 
     try:
         response = requests.post(
-            "https://api.mistral.ai/v1/chat/completions",
+            "https://api.infomaniak.com/1/ai/106774/openai/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
             },
             json={
-                "model": "mistral-small-latest",
+                "model": "mistral24b",
                 "messages": [{"role": "user", "content": prompt}]
             }
         )
