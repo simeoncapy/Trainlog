@@ -43,6 +43,8 @@ if (!freehand) {
 } else {
     location.href = "{{ url_for('freehand', username=username) }}" + location.search;
 }
+var fromApp = !!getGetParams().get("fromApp");
+
 var origCoord = newTrip["originStation"][0];
 var destCoord = newTrip["destinationStation"][0];
 var origLabel = newTrip["originStation"][1];
@@ -70,7 +72,25 @@ async function saveTrip(continueTrip=false) {
             newTrip: JSON.stringify(newTrip)
         },
         success: function(res) {
-            if (!continueTrip || newTrip.precision != "preciseDates") {
+            if(true/*fromApp*/) {
+                const payload = {
+                    jsonPath: currentRoute, // or JSON.parse(JSON.stringify(currentRoute)) if you want a pure JSON clone
+                    newTrip: newTrip
+                };
+
+                const blob = new Blob(
+                    [JSON.stringify(payload)], // add , null, 2 if you want pretty formatting
+                    { type: "application/json" }
+                );
+
+                const url = URL.createObjectURL(blob);
+                location.href = url;
+
+                // optional cleanup (doesn't affect navigation)
+                setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                return;
+            }
+            else if (!continueTrip || newTrip.precision != "preciseDates") {
                 location.href = "{{ url_for('landing') }}";
             } else {
                 location.href = `{{ url_for('new', username=username, vehicle_type='') }}${type}?prevDest=${newTrip["destinationStation"]}&prevEndDate=${newTrip["newTripEndDate"]}&prevEndTime=${newTrip["newTripEndTime"]}`;
