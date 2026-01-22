@@ -741,7 +741,7 @@ def saveTripToDb(username, newTrip, newPath, trip_type="train"):
         ticket_id=sanitize_param(newTrip["ticket_id"]),
         is_project=start_datetime == 1 or end_datetime == 1,
         path=newPath,
-        visibility=sanitize_param(newTrip["visibility"])
+        visibility=sanitize_param(newTrip.get("visibility", get_default_trip_visibility(trip_type)))
     )
 
     create_trip(trip)
