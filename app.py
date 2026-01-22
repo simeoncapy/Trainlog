@@ -8708,8 +8708,10 @@ def get_bounds(username):
             except Exception:
                 continue
         
-        if responseJson is not None and responseJson["features"] is not None:      
-            properties = responseJson["features"][0]["properties"]
+        if responseJson is not None and responseJson["features"] is not None:
+            properties = {}
+            if responseJson["features"] != []:
+                properties = responseJson["features"][0]["properties"]
 
             # Extract relevant location details
             country = properties.get("country", "Unknown")
