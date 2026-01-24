@@ -95,7 +95,6 @@ from py.sql import (
     deleteUserPath,
     deleteUserTrips,
     getAirports,
-    getCurrentTrip,
     getDuplicate,
     getDynamicUserTrips,
     getLeaderboardCountries,
@@ -170,7 +169,8 @@ from src.utils import (
     getNameFromPath,
     processDates,
     getUser,
-    isCurrentTrip,
+    get_user_id,
+    has_current_trip,
     lang,
     mainConn,
     managed_cursor,
@@ -179,7 +179,7 @@ from src.utils import (
     pathConn,
     readLang,
     sendOwnerEmail,
-    sendEmail,    
+    sendEmail,
     getLocalDatetime,
     login_required,
     admin_required,
@@ -200,6 +200,7 @@ from src.trips import (
     attach_ticket_to_trips,
     change_trips_visibility,
     delete_ticket_from_db,
+    get_current_trip_id,
 )
 from src.paths import Path
 from src.carbon import *
@@ -489,6 +490,7 @@ def changeLang(langToSet, session=False):
     session["userinfo"]["logged_in_user"] = getUser()
     session["userinfo"]["is_owner"] = True if getUser() == owner else False
     user = User.query.filter_by(username=session.get("logged_in")).first()
+    session["userinfo"]["user_id"] = user.uid
     session["userinfo"]["is_alpha"] = True if user and user.alpha else False
     session["userinfo"]["is_premium"] = True if user and user.premium else False
     session["userinfo"]["is_admin"] = True if user and user.admin else False
@@ -2500,6 +2502,7 @@ def signup():
             # Log the user in by setting the session variables
             session[username] = True
             session["logged_in"] = username
+            session["logged_in_user_id"] = new_user.uid
 
             # Redirect to the 'about' page after successful signup and login
             return redirect(url_for("about"))
@@ -2597,7 +2600,8 @@ def login():
     # Check if the user is already logged in
     if request.method == "GET":
         username = session.get("logged_in")
-        if username and session.get(username):
+        user_id = session.get("logged_in_user_id")
+        if username and user_id and session.get(username):
             return "" if raw else redirect(url_for("user_home", username=username))
 
     # Handle POST request for login
@@ -2644,6 +2648,7 @@ def login():
             # Set session for authenticated user
             session[username] = True
             session["logged_in"] = username
+            session["logged_in_user_id"] = user.uid
             session.permanent = (
                 True  # Extend session validity based on app configuration
             )
@@ -2688,7 +2693,7 @@ def user_home(username):
         title=lang[session["userinfo"]["lang"]]["map"],
         username=username,
         nav="bootstrap/navigation.html",
-        isCurrent=isCurrentTrip(username),
+        isCurrent=has_current_trip(get_user_id()),
         public=False,
         **lang[session["userinfo"]["lang"]],
         **session["userinfo"],
@@ -2763,7 +2768,7 @@ def new_map(username):
         title=lang[session["userinfo"]["lang"]]["map"],
         username=username,
         nav="bootstrap/navigation.html",
-        isCurrent=isCurrentTrip(username),
+        isCurrent=has_current_trip(get_user_id(username)),
         tileserver=user.tileserver,
         globe=user.globe,
         public=False,
@@ -2806,7 +2811,7 @@ def countries(username, cc):
         username=username,
         nav=nav,
         cc=cc,
-        isCurrent=isCurrentTrip(username),
+        isCurrent=has_current_trip(get_user_id(username)),
         **lang[session["userinfo"]["lang"]],
         **session["userinfo"],
     )
@@ -2907,7 +2912,7 @@ def editCountries(cc):
         username=getUser(),
         nav="bootstrap/navigation.html",
         cc=cc,
-        isCurrent=isCurrentTrip(getUser()),
+        isCurrent=has_current_trip(get_user_id()),
         **lang[session["userinfo"]["lang"]],
         **session["userinfo"],
     )
@@ -2922,7 +2927,7 @@ def editCountriesList():
         title="Edit List",
         username=getUser(),
         nav="bootstrap/navigation.html",
-        isCurrent=isCurrentTrip(getUser()),
+        isCurrent=has_current_trip(get_user_id()),
         **lang[session["userinfo"]["lang"]],
         **session["userinfo"],
     )
@@ -3883,7 +3888,7 @@ def public_stats(username, tripType=None, year=None):
     return render_template(
         "stats.html",
         nav="bootstrap/public_nav.html",
-        isCurrent=isCurrentTrip(username),
+        isCurrent=has_current_trip(get_user_id(username)),
         is_public=True,
         title=lang[session["userinfo"]["lang"]]["stats"],
         username=username,
@@ -3950,7 +3955,7 @@ def stats(username, tripType=None, year=None):
     return render_template(
         "stats.html",
         nav="bootstrap/navigation.html",
-        isCurrent=isCurrentTrip(username),
+        isCurrent=has_current_trip(get_user_id(username)),
         is_public=False,
         title=lang[session["userinfo"]["lang"]]["stats"],
         username=username,
@@ -4177,11 +4182,6 @@ def check_current_user_owns_trip(trip_id):
                 f"User {getUser()} tried to access trip {trip_id} owned by {row['username']}"
             )
             abort(404)  # Trip does not belong to the user
-
-
-def get_user_id(username):
-    return User.query.filter_by(username=username).first().uid
-
 
 def get_trip(trip_id):
     with managed_cursor(mainConn) as cursor:
@@ -5152,30 +5152,32 @@ def public_getTripsPaths(username, lastLocal):
 
 @app.route("/u/<username>/getTripsPaths/<lastLocal>", methods=["GET", "POST"])
 @login_required  # Login access check
-def getTripsPaths(username, lastLocal):
+def get_trip_paths(username, lastLocal):
     result = fetchTripsPaths(username, lastLocal, public=0)
     return jsonify(result)
 
 
 @app.route("/u/<username>/getCurrentTrip", methods=["GET", "POST"])
 @login_required
-def getCurrentTripPath(username):
-    with managed_cursor(mainConn) as cursor:
-        trip = cursor.execute(getCurrentTrip, {"username": username}).fetchone()
-    tripIds = [trip["uid"]]
+def get_current_trip_path(username):
+    trip_id = get_current_trip_id()
+    if trip_id is None:
+        return jsonify([])
 
-    tripList = []
+    trip_ids = [trip_id]
 
-    formattedGetUserLines = getUserLines.format(
-        trip_ids=", ".join(("?",) * len(tripIds))
+    trip_list = []
+
+    formatted_get_user_lines = getUserLines.format(
+        trip_ids=", ".join(("?",) * len(trip_ids))
     )
     with managed_cursor(pathConn) as cursor:
-        pathResult = cursor.execute(formattedGetUserLines, tuple(tripIds)).fetchall()
+        pathResult = cursor.execute(formatted_get_user_lines, tuple(trip_ids)).fetchall()
     paths = {}
     for path in pathResult:
         paths[path["trip_id"]] = path["path"]
 
-    for tripId in tripIds:
+    for tripId in trip_ids:
         with managed_cursor(mainConn) as cursor:
             trip = formatTrip(
                 dict(cursor.execute(getTrip, {"trip_id": tripId}).fetchone())
@@ -5183,7 +5185,7 @@ def getCurrentTripPath(username):
         user = User.query.filter_by(username=trip["username"]).first()
         if not session.get(user.username) and not user.is_public():
             abort(401)
-        tripList.append(
+        trip_list.append(
             {
                 "time": trip["time"],
                 "trip": dict(trip),
@@ -5191,11 +5193,11 @@ def getCurrentTripPath(username):
                 "distances": getDistanceFromPath(json.loads(paths[trip["uid"]])),
             }
         )
-    sortedTripList = sorted(tripList, key=lambda d: d["trip"]["uid"], reverse=True)
-    sortedTripList = sorted(
-        sortedTripList, key=lambda d: d["trip"]["start_datetime"], reverse=True
+    sorted_trip_list = sorted(trip_list, key=lambda d: d["trip"]["uid"], reverse=True)
+    sorted_trip_list = sorted(
+        sorted_trip_list, key=lambda d: d["trip"]["start_datetime"], reverse=True
     )
-    return jsonify(sortedTripList)
+    return jsonify(sorted_trip_list)
 
 
 def get_logo_url(operator, trip):
@@ -6019,7 +6021,7 @@ def dynamic_trips(username, time=None):
         hasPrice=True,
         hasUncommonTrips=hasUncommonTrips(username),
         nav="bootstrap/navigation.html",
-        isCurrent=isCurrentTrip(username),
+        isCurrent=has_current_trip(get_user_id(username)),
         isPublic=False,
         projects=projects,
         **lang[session["userinfo"]["lang"]],
@@ -6045,7 +6047,7 @@ def public_trips(username, time=None):
         hasUncommonTrips=hasUncommonTrips(username),
         nav="bootstrap/public_nav.html",
         isPublic=True,
-        isCurrent=isCurrentTrip(username),
+        isCurrent=has_current_trip(get_user_id(username)),
         projects=projects,
         **lang[session["userinfo"]["lang"]],
         **session["userinfo"],
@@ -6684,7 +6686,7 @@ def timeline(username):
         days_abroad_by_year=days_abroad_by_year,
         residence_country_by_year=residence_country_by_year,
         nav="bootstrap/navigation.html",
-        isCurrent=isCurrentTrip(getUser()),
+        isCurrent=has_current_trip(get_user_id()),
         **lang[session["userinfo"]["lang"]],
         **session["userinfo"],
     )
@@ -6702,7 +6704,7 @@ def p_timeline(username):
         days_abroad_by_year=days_abroad_by_year,
         residence_country_by_year=residence_country_by_year,
         nav="bootstrap/public_nav.html",
-        isCurrent=isCurrentTrip(getUser()),
+        isCurrent=has_current_trip(get_user_id()),
         **lang[session["userinfo"]["lang"]],
         **session["userinfo"],
     )
@@ -6862,7 +6864,7 @@ def adminManual():
         stationsList=stationsList,
         username=getUser(),
         nav="bootstrap/navigation.html",
-        isCurrent=isCurrentTrip(getUser()),
+        isCurrent=has_current_trip(get_user_id()),
         **lang[session["userinfo"]["lang"]],
         **session["userinfo"],
     )
@@ -7014,7 +7016,7 @@ def airliners():
         airlinerList=airlinerList,
         username=getUser(),
         nav="bootstrap/navigation.html",
-        isCurrent=isCurrentTrip(getUser()),
+        isCurrent=has_current_trip(get_user_id()),
         **lang[session["userinfo"]["lang"]],
         **session["userinfo"],
     )
@@ -7101,7 +7103,7 @@ def editStation(id):
             station=station,
             username=getUser(),
             nav="bootstrap/navigation.html",
-            isCurrent=isCurrentTrip(getUser()),
+            isCurrent=has_current_trip(get_user_id()),
             **lang[session["userinfo"]["lang"]],
             **session["userinfo"],
         )
@@ -7193,9 +7195,9 @@ def stations_data():
 def stations():
     return render_template(
         "admin/stations.html",
-        username=session.get("logged_in"),
+        username=get_user(),
         nav="bootstrap/navigation.html",
-        isCurrent=isCurrentTrip(session.get("logged_in")),
+        isCurrent=has_current_trip(get_user_id()),
         **lang[session["userinfo"]["lang"]],
         **session["userinfo"],
     )
@@ -7232,7 +7234,7 @@ def editManual(id):
                 station=station,
                 username=session.get("logged_in"),
                 nav="bootstrap/navigation.html",
-                isCurrent=isCurrentTrip(session.get("logged_in")),
+                isCurrent=has_current_trip(get_user_id()),
                 **lang[session["userinfo"]["lang"]],
                 **session["userinfo"],
             )
