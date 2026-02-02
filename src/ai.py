@@ -11,7 +11,8 @@ from icalendar import Calendar
 from py.utils import load_config, getCountryFromCoordinates, get_flag_emoji, getDistance
 from src.trips import Trip, create_trip
 from src.routing import forward_routing_core
-from src.utils import get_default_trip_visibility
+from src.utils import get_default_trip_visibility, pathConn, managed_cursor
+from src.pg import pg_session
 import re
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ class FakeRequest:
         self.args = {"use_new_router": "false"}
 
 def route_path(origin, destination, trip_type):
-    routable_types = {"train", "tram", "metro", "bus", "car", "walk", "cycle"}
+    routable_types = {"train", "tram", "metro", "ferry", "aerialway", "bus", "car", "walk", "cycle"}
     if trip_type not in routable_types:
         return None
     
@@ -77,6 +78,48 @@ def normalize_station_name(name):
     for pattern, replacement in STATION_EXPANSIONS.items():
         result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
     return result.strip()
+
+def get_coords_from_past_trips(station_name, trip_type="train"):
+    """Find coordinates from past trips matching station name using PG similarity."""
+    try:
+        with pg_session() as pg:
+            result = pg.execute("""
+                SELECT trip_id, origin_station, destination_station,
+                       GREATEST(
+                           similarity(origin_station, :name),
+                           similarity(destination_station, :name)
+                       ) as sim,
+                       CASE 
+                           WHEN similarity(origin_station, :name) >= similarity(destination_station, :name)
+                           THEN 'origin'
+                           ELSE 'destination'
+                       END as matched_field
+                FROM trips
+                WHERE trip_type = :trip_type
+                  AND (origin_station % :name OR destination_station % :name)
+                ORDER BY sim DESC
+                LIMIT 1
+            """, {"name": station_name, "trip_type": trip_type}).fetchone()
+        
+        if not result:
+            return None
+        
+        with managed_cursor(pathConn) as cursor:
+            cursor.execute("SELECT path FROM paths WHERE trip_id = ?", (result.trip_id,))
+            row = cursor.fetchone()
+        
+        if not row:
+            return None
+        
+        path = json.loads(row["path"])
+        if not path:
+            return None
+        
+        point = path[0] if result.matched_field == 'origin' else path[-1]
+        return {"lat": point[0], "lng": point[1]}
+    except Exception as e:
+        logger.debug(f"Past trips lookup failed: {e}")
+        return None
 
 def geocode_station(query, trip_type="train", fallback_coords=None, city_fallback=None):
     osm_tags = {
@@ -134,6 +177,13 @@ def geocode_station(query, trip_type="train", fallback_coords=None, city_fallbac
                     return {"name": name, "lat": lat, "lng": lng, "country_code": country_code}
             except Exception as e:
                 logger.debug(f"Geocoding {url} failed: {e}")
+    
+    # Try past trips before AI fallback
+    past_coords = get_coords_from_past_trips(query, trip_type)
+    if past_coords:
+        country = getCountryFromCoordinates(past_coords["lat"], past_coords["lng"])
+        return {"name": query, "lat": past_coords["lat"], "lng": past_coords["lng"], 
+                "country_code": country.get("countryCode", "")}
     
     if fallback_coords:
         lat, lng = fallback_coords
