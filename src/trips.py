@@ -2,11 +2,13 @@ import datetime
 import json
 import logging
 import traceback
+from enum import Enum
 
 from flask import abort, request
 
 from py.sql import deletePathQuery, getUserLines, saveQuery, updatePath, updateTripQuery
 from py.utils import getCountriesFromPath
+from src.carbon import calculate_carbon_footprint_for_trip
 from src.consts import TripTypes
 from src.paths import Path
 from src.pg import get_or_create_pg_session, pg_session
@@ -30,7 +32,6 @@ from src.utils import (
     processDates,
     sendOwnerEmail,
 )
-from src.carbon import calculate_carbon_footprint_for_trip
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,9 @@ class Trip:
         self.ticket_id = ticket_id
         self.is_project = is_project
         self.path = path
-        self.carbon = calculate_carbon_footprint_for_trip(vars(self), path) if path else None
+        self.carbon = (
+            calculate_carbon_footprint_for_trip(vars(self), path) if path else None
+        )
         self.visibility = visibility
 
     def keys(self):
@@ -106,6 +109,26 @@ class Trip:
 
     def values(self):
         return tuple(vars(self).values())
+
+    def _json_safe(self, value):
+        if isinstance(value, (datetime.datetime, datetime.date)):
+            return value.isoformat()
+        if isinstance(value, Enum):
+            return value.value
+        if isinstance(value, set):
+            return list(value)
+        if isinstance(value, Path):
+            return value.to_dict(include_trip_id=True, include_node_order=False)
+        return value
+
+    def to_dict(self, *, include_carbon=True):
+        d = vars(self).copy()
+        if not include_carbon:
+            d.pop("carbon", None)
+        return {k: self._json_safe(v) for k, v in d.items()}
+
+    def to_json(self, **json_kwargs):
+        return json.dumps(self.to_dict(), ensure_ascii=False, **json_kwargs)
 
 
 def create_trip(trip: Trip, pg_session=None):
@@ -145,7 +168,7 @@ def create_trip(trip: Trip, pg_session=None):
                 "ticket_id": trip.ticket_id,
                 "purchase_date": trip.purchasing_date,
                 "carbon": trip.carbon,
-                "visibility": trip.visibility
+                "visibility": trip.visibility,
             },
         )
 
@@ -232,7 +255,7 @@ def _create_trip_in_sqlite(trip: Trip):
                     trip.currency,
                     trip.purchasing_date,
                     trip.ticket_id,
-                    trip.visibility
+                    trip.visibility,
                 ),
             )
             # Retrieve the trip_id directly from the INSERT statement
@@ -435,7 +458,9 @@ def _update_trip_in_sqlite(
         "currency": formData.get("currency") if formData["price"] != "" else None,
         "ticket_id": formData.get("ticket_id"),
         "purchasing_date": formData.get("purchasing_date"),
-        "visibility": visibility if visibility != "" else None
+        "visibility": visibility
+        if visibility != ""
+        else None
         if formData["price"] != ""
         else None,
     }
@@ -445,10 +470,11 @@ def _update_trip_in_sqlite(
 
     if "estimated_trip_duration" in formData and "trip_length" in formData:
         updateData["countries"] = getCountriesFromPath(
-            [
-                {"lat": coord[0], "lng": coord[1]} for coord in path], 
-                formData["type"], 
-                json.loads(formData.get("details")) if formData.get("details") is not None else None
+            [{"lat": coord[0], "lng": coord[1]} for coord in path],
+            formData["type"],
+            json.loads(formData.get("details"))
+            if formData.get("details") is not None
+            else None,
         )
         updateData["estimated_trip_duration"] = formData["estimated_trip_duration"]
         updateData["trip_length"] = formData["trip_length"]
@@ -611,6 +637,7 @@ def attach_ticket_to_trips(username, ticket_id, trip_ids):
         mainConn.rollback()
         return False, str(e)
 
+
 def change_trips_visibility(username, visibility, trip_ids):
     try:
         placeholders = ", ".join(["?"] * len(trip_ids))
@@ -642,7 +669,8 @@ def change_trips_visibility(username, visibility, trip_ids):
         with pg_session() as pg:
             for trip_id in trip_ids:
                 pg.execute(
-                    change_visibility_query(), {"trip_id": trip_id, "visibility": visibility}
+                    change_visibility_query(),
+                    {"trip_id": trip_id, "visibility": visibility},
                 )
         for trip_id in trip_ids:
             compare_trip(trip_id)

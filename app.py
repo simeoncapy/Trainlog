@@ -745,6 +745,7 @@ def saveTripToDb(username, newTrip, newPath, trip_type="train"):
     )
 
     create_trip(trip)
+    return trip
 
 
 def hasUncommonTrips(username):
@@ -4026,12 +4027,16 @@ def saveTrip(username):
         newPath = json.loads(jsonPath)
         jsonNewTrip = request.form["newTrip"]
         newTrip = json.loads(jsonNewTrip)
-        saveTripToDb(
+        trip = saveTripToDb(
             username=username,
             newTrip=newTrip,
             newPath=newPath,
             trip_type=newTrip["type"],
         )
+        if request.form["fromApp"] == "true":
+            return jsonify({
+                "newTrip": trip.to_dict(),
+            }), 200
 
     return ""
 
