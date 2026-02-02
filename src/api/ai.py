@@ -15,7 +15,7 @@ _pending_trips = {}
 
 @ai_blueprint.route("/u/<username>/new/ai", methods=["GET"])
 @login_required
-def new_trip_ai_page(username):
+def new_trip_ai(username):
     user = User.query.filter_by(username=username).first()
     l = lang.get(user.lang, lang["en"])
     return render_template(
