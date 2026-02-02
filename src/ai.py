@@ -78,7 +78,7 @@ def normalize_station_name(name):
         result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
     return result.strip()
 
-def geocode_station(query, trip_type="train", fallback_coords=None):
+def geocode_station(query, trip_type="train", fallback_coords=None, city_fallback=None):
     osm_tags = {
         "bus": ["amenity:bus_station", "highway:bus_stop"],
         "train": ["railway:halt", "railway:station"],
@@ -91,12 +91,12 @@ def geocode_station(query, trip_type="train", fallback_coords=None):
         "aerialway": ["aerialway:station"],
     }
     
-    # Try normalized first (more likely to match correctly), then original
-    normalized = normalize_station_name(query)
-    queries_to_try = [normalized, query] if normalized != query else [query]
+    queries_to_try = [query]
+    if city_fallback and city_fallback != query:
+        queries_to_try.append(city_fallback)
     
     for q in queries_to_try:
-        params = [("q", q), ("limit", 5), ("lang", "en")]  # Get more results to pick best
+        params = [("q", q), ("limit", 1), ("lang", "en")]
         for tag in osm_tags.get(trip_type, []):
             params.append(("osm_tag", tag))
         
@@ -106,28 +106,20 @@ def geocode_station(query, trip_type="train", fallback_coords=None):
                 resp.raise_for_status()
                 data = resp.json()
                 
-                if not data.get("features"):
-                    continue
-                
-                # Pick best match: prefer results where name contains query terms
-                query_words = set(query.lower().split())
-                best = None
-                best_score = -1
-                
-                for feat in data["features"]:
+                if data.get("features"):
+                    feat = data["features"][0]
                     props = feat["properties"]
-                    name = props.get("name", "").lower()
-                    city = props.get("city", "").lower()
+                    lng, lat = feat["geometry"]["coordinates"]
                     
-                    # Score by how many query words appear in name/city
-                    score = sum(1 for w in query_words if w in name or w in city)
-                    if score > best_score:
-                        best_score = score
-                        best = feat
-                
-                if best and best_score > 0:
-                    props = best["properties"]
-                    lng, lat = best["geometry"]["coordinates"]
+                    # Validate against AI coords if provided
+                    if fallback_coords:
+                        dist = getDistance(
+                            {"lat": lat, "lng": lng},
+                            {"lat": fallback_coords[0], "lng": fallback_coords[1]}
+                        )
+                        if dist > 50:
+                            logger.debug(f"Geocode result for '{q}' too far ({dist:.0f}km), skipping")
+                            continue
                     
                     country_code = props.get("countrycode", "")
                     if not country_code or country_code in ["CN", "FI"]:
@@ -211,14 +203,16 @@ Ignore walking trips that are between two public transit trips unless specified
 Return ONLY valid JSON array, no markdown:
 [{{
   "type": "train|air|bus|ferry|tram|metro|car|walk|cycle",
-  "origin": "City or Station name",
+  "origin": "Station name as shown",
+  "origin_city": "City name only for geocoding",
   "origin_iata": "ABC or null if not a flight",
-  "origin_lat": latitude as number or null,
-  "origin_lng": longitude as number or null,
-  "destination": "City or Station name", 
+  "origin_lat": latitude as number (REQUIRED - estimate if needed),
+  "origin_lng": longitude as number (REQUIRED - estimate if needed),
+  "destination": "Station name as shown", 
+  "destination_city": "City name only for geocoding",
   "destination_iata": "XYZ or null if not a flight",
-  "destination_lat": latitude as number or null,
-  "destination_lng": longitude as number or null,
+  "destination_lat": latitude as number (REQUIRED - estimate if needed),
+  "destination_lng": longitude as number (REQUIRED - estimate if needed),
   "date": "YYYY-MM-DD departure date",
   "arrival_date": "YYYY-MM-DD or null if same day",
   "time_departure": "HH:MM or null",
@@ -234,6 +228,8 @@ Return ONLY valid JSON array, no markdown:
   "cabin_class": "Economy/Business/First or null",
   "notes": "Other info in {lang_name} or null"
 }}]
+
+IMPORTANT: Always provide origin_lat, origin_lng, destination_lat, destination_lng - use your knowledge to estimate coordinates for the city/station. Never return null for coordinates.
 
 For multi-day trips (ferries, overnight trains), always provide arrival_date.
 If no valid trip info, return []
