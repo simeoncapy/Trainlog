@@ -41,7 +41,13 @@
                     <span class="spinner-border spinner-border-sm ml-2" role="status" aria-hidden="true"
                         style="display: none;"></span>
                 </button><br>
-                <span id="last_date">...</span>
+                <span id="last_date">...</span><br>
+                <button id="rebuildGlobalBtn" class="btn btn-primary mt-2">
+                    Rebuild Bestagons
+                    <span class="spinner-border spinner-border-sm ml-2" role="status" aria-hidden="true"
+                        style="display: none;"></span>
+                </button><br>
+                <span id="global_map_status">...</span>
             </div>
         </div>
     </div>
@@ -135,16 +141,25 @@
             admin: 'fa-chess-rook',
             alpha: 'fa-flask',
             translator: 'fa-language',
-            premium: 'fa-gem'
+            premium: 'fa-gem',
+            feature_admin: 'fa-shield-halved'
         };
 
-        return `<button class="btn ${buttonClass} roleButton" 
-                data-uid="${user.uid}" 
-                data-role="${role}" 
+        const roleLabels = {
+            admin: 'Admin',
+            alpha: 'Alpha',
+            translator: 'Translator',
+            premium: 'Premium',
+            feature_admin: 'Feature Admin'
+        };
+
+        return `<button class="btn ${buttonClass} roleButton"
+                data-uid="${user.uid}"
+                data-role="${role}"
                 data-action="${action}">
-                <i class="fa-solid ${roleIcons[role]}"></i> 
-                <i class="fa-solid ${actionIcon}"></i> 
-                ${action === 'make' ? 'Make' : 'Remove'} ${role.charAt(0).toUpperCase() + role.slice(1)}
+                <i class="fa-solid ${roleIcons[role]}"></i>
+                <i class="fa-solid ${actionIcon}"></i>
+                ${action === 'make' ? 'Make' : 'Remove'} ${roleLabels[role] || role}
                 </button>`;
     }
 
@@ -174,6 +189,7 @@
                         if (row.premium) html += '<span style="display:none;">premium</span><i class="fa-solid fa-gem" style="color: #00CED1;"></i> ';
                         if (row.alpha) html += '<span style="display:none;">alpha</span><i class="fas fa-flask" style="color: #9B59B6;"></i> ';
                         if (row.translator) html += '<span style="display:none;">translator</span><i class="fa-solid fa-language" style="color: #3498DB;"></i> ';
+                        if (row.feature_admin) html += '<span style="display:none;">feature_admin</span><i class="fa-solid fa-shield-halved" style="color: #2ECC71;"></i> ';
                         if (row.username != "{{logged_in_user}}") {
                             if (row.admin) html += '<span style="display:none;">admin</span><i class="fa-solid fa-chess-rook" style="color: #E74C3C;"></i> ';
                         } else {
@@ -279,7 +295,8 @@
                     const alphaBtn = createRoleActionButton(row, 'alpha');
                     const translatorBtn = createRoleActionButton(row, 'translator');
                     const premiumBtn = createRoleActionButton(row, 'premium');
-                    return `${adminBtn} ${alphaBtn} ${translatorBtn} ${premiumBtn}`;
+                    const featureAdminBtn = createRoleActionButton(row, 'feature_admin');
+                    return `${adminBtn} ${alphaBtn} ${translatorBtn} ${premiumBtn} ${featureAdminBtn}`;
                 }
             },
             {
@@ -458,6 +475,67 @@
             console.error("Error occurred: " + error);
         }
     });
+
+    // ── Global hexagon map rebuild ─────────────────────────────────────────
+    var globalMapPoll = null;
+
+    function fmtDur(s) {
+        if (s == null) return '?';
+        return s < 90 ? Math.round(s) + 's' : (s / 60).toFixed(1) + ' min';
+    }
+
+    function renderGlobalMapStatus(s) {
+        var btn = $('#rebuildGlobalBtn');
+        var total = Object.values(s.counts || {}).reduce(function(a, b) { return a + b; }, 0);
+
+        if (s.running) {
+            btn.find('.spinner-border').show();
+            btn.prop('disabled', true);
+            var elapsed = s.started ? (Date.now() - Date.parse(s.started)) / 1000 : 0;
+            var est = s.estimate_seconds != null ? ' / ~' + fmtDur(s.estimate_seconds) + ' total' : '';
+            var msg;
+            if (s.phase === 'writing') {
+                msg = 'Writing datasets ' + (s.bins_done || 0) + '/' + (s.bins_total || '?') +
+                      ' — ' + total.toLocaleString() + ' hexagons so far';
+            } else {
+                msg = 'Aggregating trip points…';
+            }
+            $('#global_map_status').text(msg + ' (' + fmtDur(elapsed) + ' elapsed' + est + ')');
+            return;
+        }
+
+        btn.find('.spinner-border').hide();
+        btn.prop('disabled', false);
+        if (s.phase === 'error' || s.error) {
+            $('#global_map_status').text('Build failed: ' + (s.error || 'unknown'));
+        } else if (s.finished) {
+            $('#global_map_status').text(
+                'Last built: ' + s.finished + ' · took ' + fmtDur(s.duration_seconds) +
+                ' · ' + total.toLocaleString() + ' hexagons');
+        } else {
+            var hint = s.estimate_seconds != null ? ' (≈' + fmtDur(s.estimate_seconds) + ' expected)' : '';
+            $('#global_map_status').text('Not built yet.' + hint);
+        }
+    }
+
+    function pollGlobalMapStatus() {
+        $.get('{{url_for("bestagons_status")}}', function(s) {
+            renderGlobalMapStatus(s);
+            if (s.running && !globalMapPoll) {
+                globalMapPoll = setInterval(pollGlobalMapStatus, 4000);
+            } else if (!s.running && globalMapPoll) {
+                clearInterval(globalMapPoll); globalMapPoll = null;
+            }
+        });
+    }
+
+    $('#rebuildGlobalBtn').click(function() {
+        $.post('{{url_for("rebuild_bestagons")}}', function() {
+            pollGlobalMapStatus();
+        });
+    });
+
+    pollGlobalMapStatus();
 
     $('#langModal').on('shown.bs.modal', function () {
         if ($.fn.dataTable.isDataTable('#langTable')) {

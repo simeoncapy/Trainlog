@@ -443,12 +443,28 @@ function getTooltipFromStationNew(station){
     
 }
 
-function getFlagEmojiListNew(countriesString, tripType){
+function getFlagEmojiListNew(countriesString, tripType, powerType){
   var flagList = "\u00A0";
   var countriesDict = JSON.parse(countriesString);
   var countriesList = Object.keys(countriesDict);
    
   if (countriesList.indexOf("UN") !== -1) {countriesList.splice(countriesList.indexOf("UN"), 1); countriesList.push("UN");}
+
+  // Power icon driven by the stored power_type so the display stays consistent
+  // with the trip's recorded power (rather than being re-derived from the
+  // countries elec/nonelec split). 'auto'/unknown falls back to that split.
+  // metro/tram/aerialway/funicular have no power_type and are always electric
+  // (matching force_electric=True in carbon.py), so force ⚡ for them.
+  var alwaysElectric = ['metro', 'tram', 'aerialway', 'funicular'].includes(tripType);
+  var powerIcon = (powerType === 'electric' || alwaysElectric) ? '⚡'
+                : powerType === 'manual'   ? '🦵'
+                : powerType === 'thermic'  ? '🛢️'
+                : null;
+  function totalMeters(d) {
+    if (typeof d === 'number') return d;
+    if (typeof d === 'object' && d !== null) return (d.elec || 0) + (d.nonelec || 0);
+    return 0;
+  }
   flagList = [];
   countriesList.forEach(
     function(countryCode){
@@ -458,7 +474,10 @@ function getFlagEmojiListNew(countriesString, tripType){
       
       var title;
       if (!(countriesList.length == 2 && JSON.stringify(countriesDict[countriesList[0]]) == JSON.stringify(countriesDict[countriesList[1]]))) {
-        if (typeof countryData === 'number') {
+        if (powerIcon) {
+          // Explicit power type: one icon for the whole country distance.
+          title = `${CountryName} - ${powerIcon}${mToKm(totalMeters(countryData))}km`;
+        } else if (typeof countryData === 'number') {
           // Simple distance format: {"FR": 100}
           title = `${CountryName} - ${mToKm(countryData)}km`;
         } else if (typeof countryData === 'object' && countryData !== null) {
@@ -508,6 +527,19 @@ function toRouting(data, routingUrl, type){
   if (["accommodation", "restaurant", "poi"].includes(type)){
     newTrip["destinationStation"] = newTrip["originStation"]
   }
+  // Collect intermediate "via" waypoints (resolved label -> [coord, label])
+  newTrip["viaStations"] = [];
+  $(".viaStation").each(function(){
+    var val = $(this).val();
+    if (val && globalStationDict[val]){
+      newTrip["viaStations"].push(globalStationDict[val]);
+    }
+  });
+  // Carry FR24-imported flight data through (set by the FR24 import on the air form)
+  if (typeof window.FR24 !== "undefined" && window.FR24){
+    newTrip["fr24_id"] = window.FR24["fr24_id"];
+    newTrip["fr24_duration"] = window.FR24["fr24_duration"];
+  }
   if(
       newTrip["destinationStation"]
       && newTrip["originStation"]
@@ -526,6 +558,12 @@ function toRouting(data, routingUrl, type){
           newTrip["precision"] == "preciseDates"
           && newTrip["newTripStart"].length == 16
           && newTrip["newTripEnd"].length == 16
+        )
+        ||(
+          // Plan-trip relative timing: day offsets required, times optional.
+          newTrip["precision"] == "relative"
+          && newTrip["planStartDay"]
+          && newTrip["planEndDay"]
         )
 
       )
@@ -747,6 +785,9 @@ function manualCopyHandler(){
 }
  
 function computeTimeStatus(data) {
+  // Plan legs carry a fixed status from the server (they are hypothetical, never
+  // "past"/"current"); don't re-derive it from the anchor-relative dates vs now.
+  if (data.lockTime) return data;
   let trip = data.trip;
   if (trip.utc_filtered_start_datetime === 1 && trip.utc_filtered_end_datetime === 1) {
     // Datetimes are both 1
@@ -903,7 +944,9 @@ function getRegionFromCode(region_code){
     "MX-BCN": "Baja California", "MX-CAM": "Campeche", "MX-CHH": "Chihuahua", "MX-CHP": "Chiapas", "MX-CMX": "Mexico City", "MX-JAL": "Jalisco", "MX-MEX": "State of Mexico", "MX-OAX": "Oaxaca", "MX-ROO": "Quintana Roo", "MX-SIN": "Sinaloa", "MX-TAB": "Tabasco", "MX-VER": "Veracruz", "MX-YUC": "Yucatán",
     "AU-ACT": "Australian Capital Territory", "AU-NSW": "New South Wales", "AU-NT": "Northern Territory", "AU-QLD": "Queensland", "AU-SA": "South Australia", "AU-TAS": "Tasmania", "AU-VIC": "Victoria", "AU-WA": "Western Australia",
     "ES-AN": "Andalucía", "ES-AR": "Aragón", "ES-AS": "Asturias", "ES-CB": "Cantabria", "ES-CE": "Ceuta", "ES-CL": "Castilla y León", "ES-CM": "Castilla-La Mancha", "ES-CN": "Canarias", "ES-CT": "Cataluña", "ES-EX": "Extremadura", "ES-GA": "Galicia", "ES-IB": "Islas Baleares", "ES-MC": "Región de Murcia", "ES-MD": "Comunidad de Madrid", "ES-ML": "Melilla", "ES-NC": "Navarra", "ES-PV": "País Vasco", "ES-RI": "La Rioja", "ES-VC": "Comunidad Valenciana",
-    "KR-11": "Seoul", "KR-26": "Busan", "KR-27": "Daegu", "KR-28": "Incheon", "KR-29": "Gwangju", "KR-30": "Daejeon", "KR-31": "Ulsan", "KR-41": "Gyeonggi", "KR-42": "Gangwon", "KR-43": "Chungcheongbuk", "KR-44": "Chungcheongnam", "KR-45": "Jeollabuk", "KR-46": "Jeollanam", "KR-47": "Gyeongsangbuk", "KR-48": "Gyeongsangnam", "KR-49": "Jeju", "KR-50": "Sejong"
+    "KR-11": "Seoul", "KR-26": "Busan", "KR-27": "Daegu", "KR-28": "Incheon", "KR-29": "Gwangju", "KR-30": "Daejeon", "KR-31": "Ulsan", "KR-41": "Gyeonggi", "KR-42": "Gangwon", "KR-43": "Chungcheongbuk", "KR-44": "Chungcheongnam", "KR-45": "Jeollabuk", "KR-46": "Jeollanam", "KR-47": "Gyeongsangbuk", "KR-48": "Gyeongsangnam", "KR-49": "Jeju", "KR-50": "Sejong",
+    "IN-AP": "Andhra Pradesh", "IN-AR": "Arunachal Pradesh", "IN-AS": "Assam", "IN-BR": "Bihar", "IN-CG": "Chhattisgarh", "IN-CH": "Chandigarh", "IN-DL": "Delhi", "IN-GA": "Goa", "IN-GJ": "Gujarat", "IN-HP": "Himachal Pradesh", "IN-HR": "Haryana", "IN-JH": "Jharkhand", "IN-JK": "Jammu and Kashmir", "IN-KA": "Karnataka", "IN-KL": "Kerala", "IN-MH": "Maharashtra", "IN-ML": "Meghalaya", "IN-MN": "Manipur", "IN-MP": "Madhya Pradesh", "IN-MZ": "Mizoram", "IN-NL": "Nagaland", "IN-OD": "Odisha", "IN-PB": "Punjab", "IN-PY": "Puducherry", "IN-RJ": "Rajasthan", "IN-TN": "Tamil Nadu", "IN-TR": "Tripura", "IN-TS": "Telangana", "IN-UK": "Uttarakhand", "IN-UP": "Uttar Pradesh", "IN-WB": "West Bengal",
+    "RU-AD": "Respublika Adygeya", "RU-ALT": "Altayskiy kray", "RU-AMU": "Amurskaya oblast", "RU-ARK": "Arkhangelskaya oblast", "RU-AST": "Astrakhanskaya oblast", "RU-BA": "Respublika Bashkortostan", "RU-BEL": "Belgorodskaya oblast", "RU-BRY": "Bryanskaya oblast", "RU-BU": "Respublika Buryatiya", "RU-CE": "Chechenskaya Respublika", "RU-CHE": "Chelyabinskaya oblast", "RU-CHU": "Chukotskiy avtonomnyy okrug", "RU-CU": "Chuvashskaya Respublika", "RU-DA": "Respublika Dagestan", "RU-IN": "Respublika Ingushetiya", "RU-IRK": "Irkutskaya oblast", "RU-IVA": "Ivanovskaya oblast", "RU-KAM": "Kamchatskiy kray", "RU-KB": "Kabardino-Balkarskaya Respublika", "RU-KC": "Karachayevo-Cherkesskaya Respublika", "RU-KDA": "Krasnodarskiy kray", "RU-KEM": "Kemerovskaya oblast", "RU-KGD": "Kaliningradskaya oblast", "RU-KGN": "Kurganskaya oblast", "RU-KHA": "Khabarovskiy kray", "RU-KHM": "Khanty-Mansiyskiy avtonomnyy okrug", "RU-KIR": "Kirovskaya oblast", "RU-KK": "Respublika Khakasiya", "RU-KL": "Respublika Kalmykiya", "RU-KLU": "Kaluzhskaya oblast", "RU-KO": "Respublika Komi", "RU-KOS": "Kostromskaya oblast", "RU-KR": "Respublika Kareliya", "RU-KRS": "Kurskaya oblast", "RU-KYA": "Krasnoyarskiy kray", "RU-LEN": "Leningradskaya oblast", "RU-LIP": "Lipetskaya oblast", "RU-ME": "Respublika Mariy El", "RU-MO": "Respublika Mordoviya", "RU-MOS": "Moskovskaya oblast", "RU-MOW": "Moskva", "RU-MUR": "Murmanskaya oblast", "RU-NGR": "Novgorodskaya oblast", "RU-NIZ": "Nizhegorodskaya oblast", "RU-NVS": "Novosibirskaya oblast", "RU-OMS": "Omskaya oblast", "RU-ORE": "Orenburgskaya oblast", "RU-ORL": "Orlovskaya oblast", "RU-PER": "Permskiy kray", "RU-PRI": "Primorskiy kray", "RU-PSK": "Pskovskaya oblast", "RU-ROS": "Rostovskaya oblast", "RU-RYA": "Ryazanskaya oblast", "RU-SA": "Respublika Sakha", "RU-SAK": "Sakhalinskaya oblast", "RU-SAM": "Samarskaya oblast", "RU-SAR": "Saratovskaya oblast", "RU-SE": "Respublika Severnaya Osetiya", "RU-SMO": "Smolenskaya oblast", "RU-SPE": "Sankt-Peterburg", "RU-STA": "Stavropolskiy kray", "RU-SVE": "Sverdlovskaya oblast", "RU-TA": "Respublika Tatarstan", "RU-TAM": "Tambovskaya oblast", "RU-TOM": "Tomskaya oblast", "RU-TUL": "Tulskaya oblast", "RU-TVE": "Tverskaya oblast", "RU-TY": "Respublika Tyva", "RU-TYU": "Tyumenskaya oblast", "RU-UD": "Udmurtskaya Respublika", "RU-ULY": "Ulyanovskaya oblast", "RU-VGG": "Volgogradskaya oblast", "RU-VLA": "Vladimirskaya oblast", "RU-VLG": "Vologodskaya oblast", "RU-VOR": "Voronezhskaya oblast", "RU-YAN": "Yamalo-Nenetskiy avtonomnyy okrug", "RU-YAR": "Yaroslavskaya oblast", "RU-YEV": "Evreyskaya avtonomnaya oblast", "RU-ZAB": "Zabaykalskiy kray"
   };
   return regions[region_code]
 }

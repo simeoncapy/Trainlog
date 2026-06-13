@@ -31,6 +31,9 @@ class User(authDb.Model):
     tileserver = authDb.Column(authDb.String(50), nullable=False, default="default")
     globe = authDb.Column(authDb.Boolean, nullable=False, default=False)
     premium = authDb.Column(authDb.Boolean, nullable=False, default=False)
+    feature_admin = authDb.Column(authDb.Boolean, nullable=False, default=False)
+    # Premium-only: render flight tracks as a 3D altitude profile on trip pages.
+    flight_3d = authDb.Column(authDb.Boolean, nullable=False, default=False)
 
     def toDict(self):
         return {
@@ -51,6 +54,8 @@ class User(authDb.Model):
             "tileserver": self.tileserver,
             "globe": self.globe,
             "premium": self.premium,
+            "feature_admin": self.feature_admin,
+            "flight_3d": self.flight_3d,
         }
 
     def is_public(self):

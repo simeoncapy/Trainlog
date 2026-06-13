@@ -68,7 +68,8 @@ var origCoord = newTrip["originStation"][0];
 var destCoord = newTrip["destinationStation"][0];
 var origLabel = newTrip["originStation"][1];
 var destLabel = newTrip["destinationStation"][1];
-var wplist = [origCoord, destCoord];
+var viaStations = newTrip["viaStations"] || [];
+var wplist = [origCoord].concat(viaStations.map(function(v){ return v[0]; })).concat([destCoord]);
 var spinnerContent = '<div class="spinner-container"><div class="lds-spinner"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div></div>';
 var errorContent = '<h4 id="routing-error">{{routingError}}<h4><p>{{routingErrorDetails}}</p><p><button onclick=\"location.reload()\">{{retry}}</button></p>';
 var saveErrorContent = '<h4 id="save-error">{{saveError}}</h4><p>{{saveErrorDetails}}</p><p><button onclick=\"location.reload();\">{{retry}}</button></p>';
@@ -85,14 +86,33 @@ async function saveTrip(continueTrip=false) {
     sidebar.setContent(spinnerContent);
     flutterBridge.loading(true);
     newTrip["details"] = routeDetails;
+    var isPlan = !!newTrip.plan_uuid;
     $.post({
-        url: '{{url_for("saveTrip", username=username)}}',
+        url: isPlan ? '{{url_for("savePlanTrip", username=username)}}' : '{{url_for("saveTrip", username=username)}}',
         data: {
             jsonPath: JSON.stringify(currentRoute),
             newTrip: JSON.stringify(newTrip),
             fromApp: fromApp
         },
         success: function(res) {
+            if (isPlan) {
+                if (continueTrip) {
+                    // Keep building the plan: prefill origin from this leg's destination and
+                    // carry forward the SAME timing mode this leg used (relative or precise).
+                    var contUrl = `{{ url_for('new', username=username, vehicle_type='') }}${type}?plan=${encodeURIComponent(newTrip.plan_uuid)}&prevDest=${newTrip["destinationStation"]}`;
+                    if (newTrip.precision == "preciseDates") {
+                        contUrl += `&prevEndDate=${newTrip["newTripEndDate"] || ''}&prevEndTime=${newTrip["newTripEndTime"] || ''}`;
+                    } else if (newTrip.precision == "onlyDate") {
+                        contUrl += `&prevEndDate=${newTrip["onlyDate"] || ''}`;
+                    } else {
+                        contUrl += `&prevPlanDay=${newTrip["planEndDay"] || ''}&prevPlanTime=${newTrip["planEndTime"] || ''}`;
+                    }
+                    location.href = contUrl;
+                } else {
+                    location.href = "/u/{{ username }}/plan/" + encodeURIComponent(newTrip.plan_uuid);
+                }
+                return;
+            }
             if (fromApp) {
                 flutterBridge.loading(false);
                 flutterBridge.saveTripDone(true, res);

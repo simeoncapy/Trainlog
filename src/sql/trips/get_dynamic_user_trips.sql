@@ -1,0 +1,129 @@
+-- PostgreSQL. Builds the FilteredTrips CTE consumed by the dynamic-trips
+-- endpoint, which appends "SELECT COUNT(*)/SELECT * FROM FilteredTrips [WHERE ...]
+-- [ORDER BY ...] [LIMIT/OFFSET]". Columns are aliased to the legacy SQLite `trip`
+-- names (uid, type, purchasing_date) so the appended filters/sorts keep working;
+-- rows are adapted back to the legacy shape in Python (adapt_pg_trip_row).
+WITH base AS (
+    SELECT
+        trip_id AS uid,
+        user_id,
+        origin_station,
+        destination_station,
+        start_datetime,
+        end_datetime,
+        is_project,
+        utc_start_datetime,
+        utc_end_datetime,
+        estimated_trip_duration,
+        manual_trip_duration,
+        trip_length,
+        operator,
+        countries,
+        line_name,
+        created,
+        last_modified,
+        trip_type AS type,
+        material_type,
+        material_type_advanced,
+        seat,
+        reg,
+        waypoints,
+        notes,
+        price,
+        currency,
+        ticket_id,
+        purchase_date AS purchasing_date,
+        carbon,
+        visibility,
+        departure_delay,
+        arrival_delay,
+        power_type,
+        COALESCE(utc_start_datetime, start_datetime) AS utc_filtered_start_datetime,
+        COALESCE(utc_end_datetime, end_datetime) AS utc_filtered_end_datetime
+    FROM trips
+    WHERE user_id = :user_id
+),
+sub AS (
+    SELECT
+        base.*,
+        CASE
+            WHEN base.utc_filtered_start_datetime IS NOT NULL
+                 AND base.utc_filtered_end_datetime IS NOT NULL
+                 AND base.utc_filtered_start_datetime <> base.utc_filtered_end_datetime
+            THEN EXTRACT(EPOCH FROM (base.utc_filtered_end_datetime - base.utc_filtered_start_datetime))
+            ELSE COALESCE(base.manual_trip_duration, base.estimated_trip_duration)
+        END AS trip_duration_seconds,
+        o.short_name AS operator_name,
+        base.start_datetime::time AS start_time,
+        base.end_datetime::time AS end_time,
+        (SELECT l.logo_url
+         FROM operator_logos l
+         WHERE l.operator_id = o.operator_id
+           AND (l.effective_date <= base.utc_filtered_start_datetime
+                OR l.effective_date IS NULL
+                OR base.utc_filtered_start_datetime IS NULL)
+         ORDER BY l.effective_date DESC NULLS LAST, l.uid DESC
+         LIMIT 1) AS logo_url
+    FROM base
+    -- short_name is not unique (e.g. two "SNCB" rows, three "MPK Poznań"), so a
+    -- plain join multiplies each matching trip into duplicate rows. Pick one
+    -- operator deterministically.
+    LEFT JOIN LATERAL (
+        SELECT operator_id, short_name
+        FROM operators
+        WHERE short_name = TRIM(split_part(base.operator, ',', 1))
+        ORDER BY operator_id
+        LIMIT 1
+    ) o ON TRUE
+),
+trip_tags AS (
+    -- Scope to the current user's trips: without this the aggregate runs over the
+    -- entire tags_associations table (all users) on every request, which dominated
+    -- the query cost. base is already filtered to :user_id.
+    SELECT ta.trip_id,
+           json_agg(json_build_object('tag_id', ta.tag_id, 'name', t.name)) AS tags
+    FROM tags_associations ta
+    JOIN tags t ON ta.tag_id = t.uid
+    WHERE ta.trip_id IN (SELECT uid FROM base)
+    GROUP BY ta.trip_id
+),
+-- NOTE: the global free-text search predicate is NOT baked into FilteredTrips. It
+-- is appended to the outer "SELECT ... FROM FilteredTrips WHERE ..." by the Python
+-- builder (get_trips_api_internal) only when the search box is non-empty. With an
+-- empty search the predicate is absent, so Postgres can elide the airliners join
+-- (its columns are unused by the COUNT query) and there is no tickets join at all,
+-- roughly halving the count-query cost. The ticket-name match is done there as a
+-- correlated EXISTS on ticket_id, so this CTE no longer needs to join tickets.
+-- (Keep this CTE last so the file ends with ')': the builder concatenates the final
+-- SELECT directly onto this template.)
+FilteredTrips AS (
+    SELECT
+        sub.*,
+        airliners.iata,
+        airliners.manufacturer,
+        airliners.model,
+        sub.trip_length / NULLIF(sub.trip_duration_seconds, 0) AS trip_speed,
+        CASE
+            WHEN NOT sub.is_project
+                 AND (sub.utc_filtered_start_datetime IS NULL OR NOW() > sub.utc_filtered_start_datetime)
+            THEN 1 ELSE 0
+        END AS past,
+        CASE
+            WHEN sub.utc_filtered_start_datetime IS NOT NULL AND NOW() <= sub.utc_filtered_start_datetime
+            THEN 1 ELSE 0
+        END AS "plannedFuture",
+        CASE
+            WHEN sub.utc_filtered_start_datetime IS NULL AND sub.is_project
+            THEN 1 ELSE 0
+        END AS future,
+        trip_tags.tags AS tags
+    FROM sub
+    LEFT JOIN airliners ON sub.material_type = airliners.iata
+    LEFT JOIN trip_tags ON sub.uid = trip_tags.trip_id
+    WHERE
+        (CASE
+            WHEN NOT sub.is_project
+                 AND (sub.utc_filtered_start_datetime IS NULL OR NOW() > sub.utc_filtered_start_datetime)
+            THEN 1 ELSE 0
+        END) = :past
+)
