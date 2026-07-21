@@ -66,6 +66,9 @@
         opacity: 0.9;
     }
 
+    /* Dated future trips shown on the past page via the "show upcoming" toggle */
+    tr.upcoming-trip > td { opacity: 0.65; }
+
 </style>
 
 {% include "includes/trainset_display.html" %}
@@ -471,9 +474,11 @@
 <script type="text/javascript">
 const checkedTrips = [];
 const checkedTripData = {};
+// CLDR plural map for the "N rows selected" message (see window.pluralize in util.js).
+const dtRowsSelected = {{ dtRowsSelected | tojson }};
 
 var _trainsetNames = new Set();
-$.getJSON('/api/trainsets').done(function(rows) {
+$.getJSON('/api/trainsets', { owner: '{{ username }}' }).done(function(rows) {
     rows.forEach(function(r) { _trainsetNames.add(r.name); });
 });
 
@@ -481,9 +486,28 @@ function _isValidMaterial(mat) {
     if (!mat) return false;
     try {
         var arr = JSON.parse(mat);
-        return Array.isArray(arr) && arr.length > 0;
+        if (Array.isArray(arr)) return arr.length > 0;
+        if (arr && Array.isArray(arr.trainsets)) return arr.trainsets.length > 0;
     } catch(e) {}
     return _trainsetNames.has(mat);
+}
+
+// Whether a trip's ADVANCED material holds a resolvable trainset. The advanced field
+// is only ever written by the trainset builder — a saved-set name, an inline unit
+// array, or a {trainsets:[...]} composite — so its shape is authoritative. Unlike
+// _isValidMaterial's name path, this does NOT depend on the async _trainsetNames cache
+// (which loads from a separate request with no redraw, so the icon intermittently
+// failed to render on first draw for name-based sets).
+function _advancedHasTrainset(adv) {
+    if (!adv) return false;
+    try {
+        var v = JSON.parse(adv);
+        if (Array.isArray(v)) return v.length > 0;                          // inline units
+        if (v && Array.isArray(v.trainsets)) return v.trainsets.length > 0; // composite
+        return true;                                                        // other JSON → a reference
+    } catch(e) {
+        return true;                                                        // non-JSON string → saved set name
+    }
 }
 
 function openCompositionModal(trainName, dateStr, materialType) {
@@ -498,11 +522,11 @@ function openCompositionModal(trainName, dateStr, materialType) {
     $('#compositionModal').modal('show');
 
     if (materialType) {
-        _resolveUnits(materialType)
+        _resolveUnits(materialType, '{{ username }}')
             .done(function(r) { _renderTrainset($modalBody, r.units, r.name); })
-            .fail(function()  { $modalBody.html('<div class="alert alert-warning">No composition data found.</div>'); });
+            .fail(function()  { $modalBody.html('<div class="alert alert-warning">' + {{ tsNoComposition | tojson }} + '</div>'); });
     } else {
-        $modalBody.html('<div class="alert alert-warning">No composition data found.</div>');
+        $modalBody.html('<div class="alert alert-warning">' + {{ tsNoComposition | tojson }} + '</div>');
     }
 }
 
@@ -510,6 +534,12 @@ function openCompositionModal(trainName, dateStr, materialType) {
 function toggleTypeFilter() {
     const switchState = document.getElementById('filterTypeSwitch').checked;
     setCookie('filterTypeSwitch', switchState, 7);
+    tableObject.ajax.reload();
+}
+
+function toggleIncludeFuture() {
+    const switchState = document.getElementById('includeFutureSwitch').checked;
+    setCookie('includeFutureSwitch', switchState, 7);
     tableObject.ajax.reload();
 }
 
@@ -675,7 +705,7 @@ function processHiddenData(rowIdx, columns){
             var rawMat = rowData.material_type || '';
             var primary = rawAdv || rawMat;
             if (primary) {
-                var isValid = _isValidMaterial(primary);
+                var isValid = rawAdv ? _advancedHasTrainset(rawAdv) : _isValidMaterial(rawMat);
                 var formatted;
                 if (isValid) {
                     formatted = '';
@@ -690,7 +720,7 @@ function processHiddenData(rowIdx, columns){
                         setTimeout(function() {
                             var labels = {};
                             if (personal) labels.personal = personal;
-                            _resolveUnits(mat)
+                            _resolveUnits(mat, '{{ username }}')
                                 .done(function(r) {
                                     if (r.name && r.name !== labels.personal) labels.saved = r.name;
                                     _renderTrainsetInline(rowId, r.units, labels);
@@ -866,11 +896,14 @@ function renderLineName(data, type, row) {
     if (type === 'display') {
         // Only show for trains
         if (typeof TRAIN_TYPES !== 'undefined' && TRAIN_TYPES.includes(row.type)) {
-            var mat      = row.material_type_advanced || row.material_type || '';
+            var adv      = row.material_type_advanced || '';
+            var mat      = adv || row.material_type || '';
             var dateStr  = row.start_date || '';
             var safeName = (data || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/</g, '&lt;');
             var safeMat  = mat.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/</g, '&lt;');
-            var btn = _isValidMaterial(mat) ? `
+            // Icon only when the advanced field has a resolvable trainset (race-free);
+            // fall back to the name cache only for a legacy plain material_type match.
+            var btn = (adv ? _advancedHasTrainset(adv) : _isValidMaterial(mat)) ? `
                     <a href="javascript:void(0);"
                        onclick="openCompositionModal('${safeName}', '${dateStr}', '${safeMat}')"
                        class="text-decoration-none ms-2"
@@ -1036,6 +1069,9 @@ function renderPrices(data, type, row) {
 function _formatTrainsetStr(mat) {
     try {
         var units = JSON.parse(mat);
+        if (units && !Array.isArray(units) && Array.isArray(units.trainsets)) {
+            return units.trainsets.join(' + ');
+        }
         if (Array.isArray(units) && units.length > 0) {
             var result = [], i = 0;
             while (i < units.length) {
@@ -1164,6 +1200,7 @@ var table = $('#tripRows');
         "type": "POST",
         "data": function(d) {
             d.filterTypes = (getCookie('filterTypeSwitch') === 'true') ? 0 : 1;
+            d.includeFuture = (isPast && getCookie('includeFutureSwitch') === 'true') ? 1 : 0;
             
             // Parse smart search
             const searchValue = d.search.value || '';
@@ -1210,7 +1247,7 @@ var table = $('#tripRows');
             orderable: false
         },
         { data: 'operator', render: renderOperators },
-        {data: 'line_name',{% if is_alpha %} render: renderLineName,{% endif %}},
+        {data: 'line_name', render: renderLineName},
         { data: 'countries', render: renderFlags },
         {
             data: 'carbon_footprint',
@@ -1262,6 +1299,9 @@ var table = $('#tripRows');
     },
     createdRow: function(row, data, dataIndex) {
         $(row).attr('id', data.uid).attr("origDest", `${data.origin_station} - ${data.destination_station}`);
+        if (isPast && data.plannedFuture == 1) {
+            $(row).addClass('upcoming-trip');
+        }
     },
     order: [],
     lengthMenu: [[10, 50, 100, -1], [10, 50, 100, "{{dtAll}}"]],
@@ -1370,6 +1410,14 @@ $(document).on('mousedown', '.editButton, .copyButton', function() {
         <label class="form-check-label" for="filterTypeSwitch">{{showPlaces}}</label>
     </div>`);
     $(tableObject.table().container()).find('.dt-controls .dataTables_filter').before($switch);
+{% endif %}
+
+{% if not projects %}
+    var $futureSwitch = $(`<div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="includeFutureSwitch" onchange="toggleIncludeFuture()">
+        <label class="form-check-label" for="includeFutureSwitch">{{showUpcoming}}</label>
+    </div>`);
+    $(tableObject.table().container()).find('.dt-controls .dataTables_filter').before($futureSwitch);
 {% endif %}
 
 // Sort modal
@@ -1511,14 +1559,9 @@ function hideMultilink() {
 
 function updateSelectionMessage() {
     if (new URLSearchParams(window.location.search).get('scroll') != 'true') {
-        var message;
-        if (checkedTrips.length === 0) {
-            message = "";
-        } else if (checkedTrips.length === 1) {
-            message = "{{dtOneLineSelected}}";
-        } else {
-            message = "{{dtMultipleLineSelected}}".replace('%d', checkedTrips.length);
-        }
+        var message = checkedTrips.length === 0
+            ? ""
+            : pluralize(dtRowsSelected, checkedTrips.length);
 
         var $dataTablesInfo = $('.dataTables_info');
 
@@ -1575,12 +1618,15 @@ $('.deleteButton').off('click').on('click', function() {
             }
         }
     });
-    
 }
+
+// True only when viewing your own trips (you may change their visibility).
+// The public/friend view sets isPublic=True; the owner's own page sets it False.
+const ownsTrips = "{{ isPublic }}" != "True";
 
 function shareTrips(openInNewTab) {
     const isAllPublic = Object.values(checkedTripData).every(trip => trip.visibility === 'public');
-    if(isAllPublic) {
+    if(isAllPublic || !ownsTrips) {
         window.open("{{ url_for('public_trip', tripIds='') }}" + checkedTrips, openInNewTab ? '_blank' : '_self', 'noopener')
         return;
     }
@@ -1841,6 +1887,7 @@ function openMassEditTsb() {
         try {
             var units = JSON.parse(value);
             if (Array.isArray(units)) label = units.map(function(u) { return u.label || u.nom || u.name; }).join(' + ');
+            else if (units && Array.isArray(units.trainsets)) label = units.trainsets.join(' + ');
         } catch (e) {
             label = value;
             _trainsetNames.add(value); // keep cache current so the icon renders after table reload
@@ -2175,6 +2222,11 @@ $('#submitBtn').on('click', function() {
             filterSwitch.checked = savedState;
         }
 
+        const futureSwitch = document.getElementById('includeFutureSwitch');
+        if (futureSwitch) {
+            futureSwitch.checked = (typeof getCookie === 'function' && getCookie('includeFutureSwitch') === 'true');
+        }
+
         setTimeout(function() {
             var searchContainer = $('.dataTables_filter');
             if (searchContainer.length && !searchContainer.find('.search-help-icon').length) {
@@ -2246,7 +2298,7 @@ $('#submitBtn').on('click', function() {
         var params = { train: trainName };
         if (dateStr) params.date = dateStr;
 
-        container.html('<div class="compo-error">No composition data found.</div>');
+        container.html('<div class="compo-error">' + {{ tsNoComposition | tojson }} + '</div>');
         container.data('loaded', true);
     }
 </script>

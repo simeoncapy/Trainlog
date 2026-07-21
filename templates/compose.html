@@ -198,8 +198,22 @@
     <!-- Header -->
     <div class="cp-header">
       <a href="javascript:history.back()" class="text-muted" style="line-height:1;"><i class="bi bi-arrow-left"></i></a>
-      <div class="cp-icon">
-        <img src="{{ url_for('static', filename='images/icons/trip_logos/' + vehicle_type + '.png') }}" onerror="this.style.display='none'">
+      <div class="dropdown">
+        <div class="cp-icon" id="typeSwitchIcon" data-bs-toggle="dropdown" aria-expanded="false"
+             role="button" title="{{ changeTripType|default('Change trip type') }}" style="cursor:pointer;">
+          <img src="{{ url_for('static', filename='images/icons/trip_logos/' + vehicle_type + '.png') }}" onerror="this.style.display='none'">
+        </div>
+        <ul class="dropdown-menu" id="typeSwitchMenu" aria-labelledby="typeSwitchIcon" style="max-height:60vh;overflow:auto;">
+          {% for t, label in new_trip_types.items() %}
+          <li>
+            <a class="dropdown-item d-flex align-items-center gap-2 {% if t == vehicle_type %}active{% endif %}"
+               href="{{ url_for('compose', username=username, vehicle_type=t) }}{% if request.query_string %}?{{ request.query_string.decode() }}{% endif %}">
+              <img src="{{ url_for('static', filename='images/icons/trip_logos/' + t + '.png') }}" width="20" height="20" onerror="this.style.display='none'">
+              <span>{{ label }}</span>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
       </div>
       <div class="cp-title">{{ newTrip }}</div>
       {% if vehicle_type == 'air' %}
@@ -449,6 +463,8 @@
 </div>
 
 <script src="{{ static_autoversion(filename='js/map.js') }}"></script>
+<script src="{{ url_for('static', filename='js/lib/leaflet.geometryutil.js') }}"></script>
+<script src="{{ url_for('static', filename='js/freehand.js') }}"></script>
 <script>
 var vehicle_type = "{{ vehicle_type }}";
 var saveURL = "{{ url_for('saveTrip', username=username) }}";
@@ -484,9 +500,59 @@ var visitedStations = {};
 var originEntry = null, destEntry = null;
 var routingStarted = false;
 var tempMarkers = {};
+// Freehand inline mode (declared unconditionally so composeSave can always read them).
+var freehandEditor = null;
+var freehandActive = false;
 
 // ── Map (createMap from map.js handles tile server selection) ──
 var map = createMap(null, [48, 8]);
+
+// ── Inline freehand mode: a map toggle swaps the router for the hand-draw canvas
+//    on this same map, keeping all form fields. Only for routable ground types. ──
+{% if vehicle_type not in ('air', 'helicopter', 'accommodation', 'poi', 'restaurant') %}
+function composeFreehandSeed() {
+  var via = viaStations.filter(Boolean).map(function (v) { return v[0]; });
+  return [originEntry[0]].concat(via).concat([destEntry[0]]);
+}
+function enterFreehand() {
+  if (freehandActive) return;
+  if (!originEntry || !destEntry) {
+    alert('{{ pleaseSetDest|default("Please set an origin and destination.") }}');
+    return;
+  }
+  freehandActive = true;
+  if (window.control) map.removeControl(window.control);
+  var seed = composeFreehandSeed();
+  freehandEditor = createFreehandEditor(map, {
+    origin: seed[0], dest: seed[seed.length - 1], waypoints: seed.slice(1, -1),
+    markerIconStart: markerIconStart, markerIconEnd: markerIconEnd,
+    onChange: function (path, distance) {
+      currentRoute = path.map(function (p) { return { lat: p.lat, lng: p.lng }; });
+      routeDetails = null;
+      newTrip.trip_length = distance;
+      newTrip.estimated_trip_duration = (distance / 30) * 3.6; // rough; freehand has no network
+    }
+  });
+}
+function exitFreehand() {
+  if (!freehandActive) return;
+  freehandActive = false;
+  if (freehandEditor) { freehandEditor.destroy(); freehandEditor = null; }
+  if (window.control) window.control.addTo(map); // re-adds + re-routes
+}
+var fhToggle = addFreehandToggle(map, {
+  labelFreehand: "{{ freehandMode|default('Freehand') }}",
+  labelRouter: "{{ routerMode|default('Router') }}",
+  onToggle: function (active) {
+    if (active) {
+      enterFreehand();
+      if (!freehandActive) fhToggle.setActive(false); // aborted (no stations yet) → revert button
+    } else {
+      exitFreehand();
+    }
+  }
+});
+{% endif %}
 
 // ── Station search URLs ──
 var stationSearchURLs = {
@@ -921,6 +987,49 @@ for (var _opt of document.getElementById('currency').options) {
 // ── Tags ──
 setupTagAutocomplete('{{ url_for("get_all_tags", username=username) }}');
 
+// ── Prefill from "Save & continue": origin = previous leg's destination,
+//    departure timing carried forward from the previous leg's arrival. ──
+(function() {
+  var qp = new URLSearchParams(window.location.search);
+  var prevDest = qp.get('prevDest');
+  if (prevDest) {
+    try {
+      var entry = JSON.parse(prevDest);
+      if (Array.isArray(entry) && entry.length === 2 && Array.isArray(entry[0])) {
+        var label = entry[1];
+        globalStationDict[label] = entry;
+        $('#originStation').val(label);
+        document.getElementById('dot-origin').classList.remove('resolved');
+        onStationSelected('origin', entry, 'dot-origin');
+        {% if vehicle_type in ('accommodation', 'poi', 'restaurant') %}
+        destEntry = entry; // single-point types reuse origin as destination
+        {% endif %}
+      }
+    } catch (e) { /* malformed prevDest — ignore */ }
+  }
+
+  var prevEndDate = qp.get('prevEndDate');
+  var prevPlanDay = qp.get('prevPlanDay');
+  if (prevEndDate) {
+    document.getElementById('prec-precise').checked = true;
+    document.getElementById('newTripStartDate').value = prevEndDate;
+    document.getElementById('newTripStartTime').value = qp.get('prevEndTime') || '';
+    document.getElementById('newTripEndDate').value = prevEndDate;
+    document.getElementById('onlyDate').value = prevEndDate;
+    updateTimingPanel();
+  }
+  {% if plan_uuid %}
+  else if (prevPlanDay) {
+    document.getElementById('prec-relative').checked = true;
+    document.getElementById('planStartDay').value = prevPlanDay;
+    document.getElementById('planEndDay').value = prevPlanDay;
+    var prevPlanTime = qp.get('prevPlanTime');
+    if (prevPlanTime) document.getElementById('planStartTime').value = prevPlanTime;
+    updateTimingPanel();
+  }
+  {% endif %}
+})();
+
 // ── Save (also exposed as saveTrip() so routing.js sidebar button works) ──
 function saveTrip(continueTrip) { composeSave(!!continueTrip); }
 
@@ -983,14 +1092,28 @@ function composeSave(continueTrip) {
   document.getElementById('btnSaveContinue').disabled = true;
 
   function onSaveSuccess() {
-    if (plan_uuid) {
-      if (continueTrip) {
-        location.href = '{{ url_for("compose", username=username, vehicle_type="__VT__") }}'.replace('__VT__', vehicle_type) +
-          '?plan=' + encodeURIComponent(plan_uuid) +
-          '&prevDest=' + encodeURIComponent(JSON.stringify(newTrip.destinationStation));
-      } else {
-        location.href = '/u/{{ username }}/plan/' + encodeURIComponent(plan_uuid);
+    if (continueTrip) {
+      // Reopen the compose form prefilled from this leg: origin = this destination,
+      // departure timing carried forward from this leg's arrival.
+      var contUrl = '{{ url_for("compose", username=username, vehicle_type="__VT__") }}'.replace('__VT__', vehicle_type) +
+        '?prevDest=' + encodeURIComponent(JSON.stringify(newTrip.destinationStation));
+      if (plan_uuid) {
+        contUrl += '&plan=' + encodeURIComponent(plan_uuid);
       }
+      if (prec === 'preciseDates') {
+        contUrl += '&prevEndDate=' + encodeURIComponent(newTrip.newTripEndDate || '') +
+                   '&prevEndTime=' + encodeURIComponent(newTrip.newTripEndTime || '');
+      } else if (prec === 'onlyDate') {
+        contUrl += '&prevEndDate=' + encodeURIComponent(newTrip.onlyDate || '');
+      } else if (prec === 'relative') {
+        contUrl += '&prevPlanDay=' + encodeURIComponent(newTrip.planEndDay || '') +
+                   '&prevPlanTime=' + encodeURIComponent(newTrip.planEndTime || '');
+      }
+      location.href = contUrl;
+      return;
+    }
+    if (plan_uuid) {
+      location.href = '/u/{{ username }}/plan/' + encodeURIComponent(plan_uuid);
     } else {
       var isProject = prec === 'unknown' ? newTrip.unknownType === 'future'
         : prec === 'preciseDates' && newTrip.newTripStart ? new Date() < new Date(newTrip.newTripStart) : false;
@@ -1041,6 +1164,12 @@ function composeSave(continueTrip) {
     return;
   }
   newTrip.details = routeDetails;
+  if (freehandActive && freehandEditor) {
+    newTrip.route_source = 'freehand';
+    newTrip.waypoints = JSON.stringify(freehandEditor.getWaypoints());
+  } else {
+    newTrip.route_source = 'router';
+  }
   $.post({
     url: plan_uuid ? savePlanURL : saveURL,
     data: { jsonPath: JSON.stringify(currentRoute), newTrip: JSON.stringify(newTrip), fromApp: 'false' },

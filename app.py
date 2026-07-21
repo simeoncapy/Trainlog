@@ -59,7 +59,8 @@ from scgraph.geographs.marnet import marnet_geograph
 from sqlalchemy import and_, case, func, or_
 from sqlalchemy_utils import database_exists
 from werkzeug.datastructures import FileStorage
-from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import HTTPException, MethodNotAllowed, NotFound
+from werkzeug.routing import RequestRedirect
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 import sqlite3
@@ -104,6 +105,7 @@ from src.sql.trips import (
     get_trip_query,
     get_trips_country_query,
     get_unique_user_trips_query,
+    get_updated_user_trips_query,
     get_user_lines_query,
     get_user_trips_query,
 )
@@ -150,10 +152,13 @@ from src.api.carbon import carbon_blueprint
 from src.api.wrapped import wrapped_blueprint, DISTANCE_COMPARISONS, DURATION_COMPARISONS
 from src.api.stats import stats_blueprint, fetch_stats, get_distinct_stat_years
 from src.api.ai import ai_blueprint
-from src.api.trainset import trainset_blueprint
-from src.api.vagonweb import vagonweb_blueprint
+from src.api.mcp import blueprint as mcp_blueprint
+from src.api.trainset import public_trainset_info, trainset_blueprint
 from src.api.dashboard import dashboard_blueprint
 from src.api.timeline import timeline_blueprint
+from src import visualisations as viz_module
+from src.api.trips import trips_blueprint
+from src.api.live_tracks import get_live_tracks, live_tracks_blueprint
 from src.consts import DbNames, TripTypes
 from src.global_map import (
     available_bins,
@@ -181,6 +186,7 @@ from src.utils import (
     sendOwnerEmail,
     sendEmail,
     getLocalDatetime,
+    getUtcDatetime,
     login_required,
     admin_required,
     public_required,
@@ -188,7 +194,8 @@ from src.utils import (
     check_and_increment_fr24_usage,
     fr24_usage,
     get_default_trip_visibility,
-    current_user_is_friend_with
+    current_user_is_friend_with,
+    external_url,
 )
 from src.trips import (
     Trip,
@@ -206,6 +213,11 @@ from src.trips import (
     get_current_trip_id,
 )
 from src.paths import Path, coords_to_ewkt, fetch_path, geom_geojson_to_coords
+from src.trips.freehand_transform import (
+    apply_to_trip,
+    purge_expired_backups,
+    revert_trip,
+)
 from src.sql.plans import (
     insert_plan_query,
     get_plan_query,
@@ -223,11 +235,12 @@ from src.sql.plans import (
     delete_plan_cost_query,
     set_plan_trip_cost_query,
 )
-from src.plans.process_plan_dates import process_plan_dates
+from src.plans.process_plan_dates import RELATIVE_REF_DATE, process_plan_dates
 from src.plans.plan_trip import PlanTrip
 from src.plans.create_plan_trip import create_plan_trip
 from src.plans.update_plan_trip_full import update_plan_trip_full
 from src.plans.delete_plan import delete_plan, delete_plan_trip
+from src.plans.duplicate_plan import duplicate_plan
 from src.plans.validate_plan import validate_plan
 from src.plans.import_trips import import_trips_to_plan
 from src.carbon import *
@@ -266,10 +279,12 @@ app.register_blueprint(carbon_blueprint)
 app.register_blueprint(stats_blueprint)
 app.register_blueprint(wrapped_blueprint)
 app.register_blueprint(ai_blueprint)
+app.register_blueprint(mcp_blueprint)
 app.register_blueprint(trainset_blueprint)
-app.register_blueprint(vagonweb_blueprint)
 app.register_blueprint(dashboard_blueprint)
 app.register_blueprint(timeline_blueprint)
+app.register_blueprint(trips_blueprint)
+app.register_blueprint(live_tracks_blueprint)
 
 app.config["CACHE_TYPE"] = "SimpleCache"
 app.config["CACHE_DEFAULT_TIMEOUT"] = 864000
@@ -826,6 +841,7 @@ def saveTripToDb(username, newTrip, newPath, trip_type="train", altitude=None, t
         co2_override=float(newTrip["co2Override"]) if newTrip.get("co2Override") else None,
         altitude=altitude,
         timestamps=timestamps,
+        route_source=newTrip.get("route_source") or "router",
     )
 
     create_trip(trip)
@@ -862,7 +878,7 @@ def savePlanTripToDb(username, newTrip, newPath, plan, trip_type="train"):
         )
 
     now = datetime.now()
-    timing = process_plan_dates(newTrip, newPath, plan["anchor_date"])
+    timing = process_plan_dates(newTrip, newPath)
 
     for k in ("reg", "seat", "material_type", "material_type_advanced", "waypoints", "notes"):
         newTrip.setdefault(k, "")
@@ -1048,27 +1064,21 @@ def user_exists(username):
     return user is not None
 
 def saveManualStation(creator, name, lat, lng, station_type):
-    if station_type in (
-        "train",
-        "bus",
-        "helicopter",
-        "ferry",
-        "aerialway",
-        "tram",
-        "metro",
-    ):
-        with pg_session() as pg:
-            pg.execute(
-                "INSERT INTO manual_stations (creator, name, lat, lng, station_type)"
-                " VALUES (:creator, :name, :lat, :lng, :station_type)",
-                {
-                    "creator": creator,
-                    "name": name,
-                    "lat": lat,
-                    "lng": lng,
-                    "station_type": station_type,
-                },
-            )
+    # Manual stations are now scoped per-user (filtered by creator), so there is
+    # no longer any privacy concern with persisting them for every trip type
+    # (car, walk, cycle, ...).
+    with pg_session() as pg:
+        pg.execute(
+            "INSERT INTO manual_stations (creator, name, lat, lng, station_type)"
+            " VALUES (:creator, :name, :lat, :lng, :station_type)",
+            {
+                "creator": creator,
+                "name": name,
+                "lat": lat,
+                "lng": lng,
+                "station_type": station_type,
+            },
+        )
 
 
 def airlineLogoProcess(newTrip):
@@ -1306,6 +1316,21 @@ def new_auto(username):
     )
 
 
+def get_new_trip_types(user_lang):
+    """Ordered {type: label} of the vehicle types the new-trip form supports.
+
+    Used to populate the in-form type switcher (click the header icon to swap
+    type, e.g. follow a train trip with a bus trip). Only types that ``new()``
+    can actually render are listed (``other`` has no form branch).
+    """
+    order = [
+        "train", "rail", "tram", "metro", "funicular", "bus", "ferry",
+        "car", "cycle", "scooter", "walk", "aerialway", "ski",
+        "air", "helicopter", "accommodation", "poi", "restaurant",
+    ]
+    return {t: user_lang[t] for t in order}
+
+
 @app.route("/u/<username>/compose/<vehicle_type>")
 @login_required
 def compose(username, vehicle_type):
@@ -1529,6 +1554,7 @@ def new(username, vehicle_type, template="new.html"):
         # and routes the save to savePlanTrip (the builder is otherwise identical).
         plan_uuid=plan_uuid,
         plan_name=plan_name,
+        new_trip_types=get_new_trip_types(lang[session["userinfo"]["lang"]]),
     )
 
 
@@ -1970,6 +1996,7 @@ def saveTripFromGPX(username, gpx_id):
             {"uid": gpx_id, "username": username},
         )
 
+    newTrip["route_source"] = "gpx_routed" if use_routing else "gpx"
     saveTripToDb(username=username, newTrip=newTrip, newPath=path, trip_type=trip_type)
 
     return jsonify({
@@ -2540,6 +2567,7 @@ def save_gpx_advanced(username):
                 "onlyDateDuration": "",
                 "unknownType": "past",
                 "waypoints": json.dumps([]),
+                "route_source": "gpx",
             }
 
             # Save trip
@@ -3031,20 +3059,6 @@ def air_routing(username, type):
     )
 
 
-@app.route("/u/<username>/freehand")
-@login_required
-def freehand(username):
-    user_obj = User.query.filter_by(username=username).first()
-    colorblind = getattr(user_obj, "colorblind", False) if user_obj else False
-    return render_template(
-        "freehand.html",
-        username=username,
-        colorblind=colorblind,
-        **lang[session["userinfo"]["lang"]],
-        **session["userinfo"],
-    )
-
-
 @app.route("/u/<username>/ship_routing")
 @login_required
 def ship_routing(username):
@@ -3468,7 +3482,7 @@ def vector_style(language, style):
         file_contents = file_contents.replace(
             "{{mapPinUrl}}",
             url_for(
-                "static", filename="styles/vector_maps", _scheme=request.scheme, _external=True
+                "static", filename="styles/vector_maps", _scheme="https", _external=True
             ),
         )
         template_url = "https://tiles.trainlog.me/tile/streets-v2+landcover-v1.1+hillshade-v1/{x}/{y}/{z}/{language}"
@@ -4108,6 +4122,118 @@ def add_dummy_path(trip_id):
             "message": f"Dummy path added to trip {trip_id}"
         })
 
+
+# ── Freehandify: turn legacy over-sampled routes into editable freehand ones ──
+# The old freehand endpoint stored the raw mouse track (thousands of points) with no
+# waypoints and route_source 'router', so those trips can't be reopened in the freehand
+# canvas. These routes simplify the dense path to a few waypoints (Douglas-Peucker) and
+# rebuild the drawn line with the exact logic of static/js/freehand.js (buildSavePath),
+# writing waypoints + rebuilt geometry + route_source='freehand'. The first run snapshots
+# the original into freehand_backup, so the change is reversible and can be re-run at a
+# different tolerance from the full-detail original. trip_length and carbon are left
+# untouched (the simplified line's length is within ~1% of the original).
+
+def _parse_trip_ids(trip_ids):
+    """Comma-separated ids -> [int]. Returns None if any token isn't an integer."""
+    try:
+        return [int(t) for t in trip_ids.split(",") if t.strip()]
+    except ValueError:
+        return None
+
+
+def _run_freehandify(ids, epsilon, restrict_user_id=None):
+    """Apply/revert helpers share this loop. When restrict_user_id is set, trips not
+    owned by that user are skipped (never touched)."""
+    results = []
+    with pg_session() as pg:
+        purge_expired_backups(pg)  # drop undo snapshots past their TTL
+        for trip_id in ids:
+            if restrict_user_id is not None:
+                row = pg.execute(
+                    "SELECT user_id FROM trips WHERE trip_id = :t", {"t": trip_id}
+                ).fetchone()
+                if row is None:
+                    results.append({"trip_id": trip_id, "status": "skipped", "reason": "not found"})
+                    continue
+                if row["user_id"] != restrict_user_id:
+                    results.append({"trip_id": trip_id, "status": "skipped", "reason": "not owned"})
+                    continue
+            results.append(apply_to_trip(pg, trip_id, epsilon))
+    return results
+
+
+def _run_revert(ids, restrict_user_id=None):
+    results = []
+    with pg_session() as pg:
+        purge_expired_backups(pg)  # drop undo snapshots past their TTL
+        for trip_id in ids:
+            if restrict_user_id is not None:
+                row = pg.execute(
+                    "SELECT user_id FROM trips WHERE trip_id = :t", {"t": trip_id}
+                ).fetchone()
+                if row is None:
+                    results.append({"trip_id": trip_id, "status": "skipped", "reason": "not found"})
+                    continue
+                if row["user_id"] != restrict_user_id:
+                    results.append({"trip_id": trip_id, "status": "skipped", "reason": "not owned"})
+                    continue
+            results.append(revert_trip(pg, trip_id))
+    return results
+
+
+@app.route("/admin/freehandify/<trip_ids>", methods=["GET"])
+@owner_required
+def freehandify_trips_admin(trip_ids):
+    """Owner-only: freehandify any trips. See _run_freehandify. `?epsilon` (metres,
+    default 50) tunes simplification — larger means fewer waypoints."""
+    ids = _parse_trip_ids(trip_ids)
+    if ids is None:
+        return jsonify({"success": False, "message": "trip_ids must be integers"}), 400
+    try:
+        epsilon = float(request.args.get("epsilon", 50))
+    except ValueError:
+        return jsonify({"success": False, "message": "epsilon must be a number"}), 400
+    return jsonify({"success": True, "epsilon": epsilon, "results": _run_freehandify(ids, epsilon)})
+
+
+@app.route("/admin/freehandify/revert/<trip_ids>", methods=["GET"])
+@owner_required
+def freehandify_revert_admin(trip_ids):
+    """Owner-only: restore trips' original routes from the freehand_backup snapshot."""
+    ids = _parse_trip_ids(trip_ids)
+    if ids is None:
+        return jsonify({"success": False, "message": "trip_ids must be integers"}), 400
+    return jsonify({"success": True, "results": _run_revert(ids)})
+
+
+@app.route("/u/<username>/freehandify/<trip_ids>", methods=["GET"])
+@login_required
+def freehandify_trips_user(username, trip_ids):
+    """Freehandify the caller's own trips (login_required guarantees username is the
+    logged-in user); trips owned by anyone else are skipped. `?epsilon` (metres,
+    default 50) tunes simplification — larger means fewer waypoints."""
+    ids = _parse_trip_ids(trip_ids)
+    if ids is None:
+        return jsonify({"success": False, "message": "trip_ids must be integers"}), 400
+    try:
+        epsilon = float(request.args.get("epsilon", 50))
+    except ValueError:
+        return jsonify({"success": False, "message": "epsilon must be a number"}), 400
+    results = _run_freehandify(ids, epsilon, restrict_user_id=get_user_id(username))
+    return jsonify({"success": True, "epsilon": epsilon, "results": results})
+
+
+@app.route("/u/<username>/freehandify/revert/<trip_ids>", methods=["GET"])
+@login_required
+def freehandify_revert_user(username, trip_ids):
+    """Restore the caller's own trips from their freehand_backup snapshot; trips owned
+    by anyone else are skipped."""
+    ids = _parse_trip_ids(trip_ids)
+    if ids is None:
+        return jsonify({"success": False, "message": "trip_ids must be integers"}), 400
+    results = _run_revert(ids, restrict_user_id=get_user_id(username))
+    return jsonify({"success": True, "results": results})
+
 def listOperatorsLogos(tripType=None):
     """
     Return list of available logos for operators from the database.
@@ -4289,6 +4415,8 @@ def render_public_trip_page(
         globe=globe,
         og=og,
         num_hidden_trips=num_hidden_trips,
+        username=user.username if user is not None else None,
+        show_ride_along=user is not None and user.username != trip_list_sorted[0]["username"],
         colorblind = colorblind,
         **lang[session["userinfo"]["lang"]],
         **session["userinfo"],
@@ -4700,7 +4828,7 @@ def saveTrip(username):
             newPath=newPath,
             trip_type=newTrip["type"],
         )
-        if request.form["fromApp"] == "true":
+        if request.form.get("fromApp") == "true":
             return jsonify({
                 "newTrip": trip.to_dict(),
             }), 200
@@ -4764,19 +4892,21 @@ def build_plan_trip_list(plan_uuid):
 
     tripList = []
     total_price = total_carbon = total_distance = 0
-    prev_end_utc = None  # arrival (UTC) of the previous timed leg, for connection checks
+    prev_end_pos = None  # arrival position of the previous timed leg, for connection checks
     for r in rows:
         pt = r._mapping
-        # Impossible connection: this timed leg departs before the previous one arrives.
-        cur_start_utc = pt["utc_start_datetime"]
-        impossible = (
-            prev_end_utc is not None
-            and cur_start_utc is not None
-            and cur_start_utc < prev_end_utc
-        )
-        if pt["utc_end_datetime"] is not None:
-            prev_end_utc = pt["utc_end_datetime"]
         coords = geom_geojson_to_coords(pt["geojson"])
+        # Impossible connection: this timed leg departs before the previous one arrives.
+        # Positions are timezone-correct and anchor-independent (see _plan_leg_positions),
+        # so neither a timezone boundary nor anchor_date drift can fabricate a conflict.
+        cur_start_pos, cur_end_pos = _plan_leg_positions(pt, coords)
+        impossible = (
+            prev_end_pos is not None
+            and cur_start_pos is not None
+            and cur_start_pos < prev_end_pos
+        )
+        if cur_end_pos is not None:
+            prev_end_pos = cur_end_pos
         sdt = _fmt_legacy_dt(pt["start_datetime"]) if pt["start_datetime"] else None
         edt = _fmt_legacy_dt(pt["end_datetime"]) if pt["end_datetime"] else None
         usdt = _fmt_legacy_dt(pt["utc_start_datetime"]) if pt["utc_start_datetime"] else None
@@ -4843,7 +4973,10 @@ def build_plan_trip_list(plan_uuid):
             total_price += trip["price_in_user_currency"]
         tripList.append(
             {"time": trip["time"], "trip": trip, "path": coords, "altitude": None,
-             "timestamps": None, "lockTime": True, "impossible": impossible}
+             "timestamps": None, "lockTime": True, "impossible": impossible,
+             # UTC-epoch departure/arrival used by compute_plan_stats for the span
+             # (timezone-correct, anchor-independent — see _plan_leg_positions).
+             "pos_start": cur_start_pos, "pos_end": cur_end_pos}
         )
 
     priceDict = {
@@ -4946,15 +5079,35 @@ def _fmt_dhm(seconds):
     return " ".join(parts)
 
 
-def _parse_legacy_dt(value):
-    """Parse a legacy 'YYYY-MM-DD HH:MM:SS' string to datetime; None for sentinels
-    (1/-1 = no/unknown date) or anything unparseable."""
-    if not isinstance(value, str):
-        return None
-    try:
-        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
-    except ValueError:
-        return None
+def _plan_leg_positions(pt, coords):
+    """(departure, arrival) UTC-epoch positions for a plan-trip, used only to order and
+    compare consecutive legs (span + impossible-connection checks).
+
+    Relative ("Day N") legs are resolved on the fixed reference date (RELATIVE_REF_DATE)
+    and converted to UTC from the path endpoints, so the comparison is correct even when
+    consecutive legs sit in different timezones — and it never touches the stored
+    datetimes, so anchor_date drift on legacy data can't fabricate false conflicts.
+    Absolute (precise) legs use their stored UTC instants. `coords` is [[lat,lng],...].
+    Returns (None, None) for untimed legs."""
+    # Seconds since the Unix epoch, from a naive UTC datetime. (Not datetime.timestamp(),
+    # which would reinterpret the naive value in the server's local timezone.)
+    epoch = lambda dt: (dt - datetime(1970, 1, 1)).total_seconds() if dt is not None else None
+    sd = pt["start_day"]
+    if sd is not None:  # relative leg
+        st, et = pt["start_time"], pt["end_time"]
+        if st is None:  # untimed -> no concrete connection to check
+            return None, None
+        ed = pt["end_day"] or sd
+        et = et if et is not None else st
+        local_s = datetime.combine(RELATIVE_REF_DATE + timedelta(days=sd - 1), st)
+        local_e = datetime.combine(RELATIVE_REF_DATE + timedelta(days=ed - 1), et)
+        if coords:
+            us = getUtcDatetime(lat=coords[0][0], lng=coords[0][1], dateTime=local_s)
+            ue = getUtcDatetime(lat=coords[-1][0], lng=coords[-1][1], dateTime=local_e)
+        else:  # no geometry to resolve a timezone -> compare the local clocks as-is
+            us, ue = local_s, local_e
+        return epoch(us), epoch(ue)
+    return epoch(pt["utc_start_datetime"]), epoch(pt["utc_end_datetime"])  # absolute leg
 
 
 def compute_plan_stats(trip_list, costs=None):
@@ -4964,16 +5117,16 @@ def compute_plan_stats(trip_list, costs=None):
     PRIX total, on top of the per-leg prices.
 
     `span` is the end-to-end length of the whole trip — first departure to last
-    arrival on the plan's (anchored) timeline — i.e. "is this a 3-day or a 5-hour
-    trip", independent of how much of that time is spent actually moving."""
+    arrival — i.e. "is this a 3-day or a 5-hour trip", independent of how much of that
+    time is spent actually moving. It reads the per-leg positions attached by
+    build_plan_trip_list (timezone-correct, anchor-independent)."""
     # Stays/stops aren't travelling and shouldn't inflate the trip's duration or span.
     NON_TRAVEL = ("poi", "accommodation", "restaurant")
     total_duration = total_distance = total_price = 0.0
     user_currency = getLoggedUserCurrency()
     per_type = {}
-    starts, ends = [], []
-    day_starts, day_ends = [], []
-    any_timed = False
+    pos_starts, pos_ends = [], []  # UTC-epoch departure/arrival (timed legs)
+    day_starts, day_ends = [], []  # Day-N offsets (relative legs, for the day-only span)
     for item in trip_list:
         t = item["trip"]
         ty = t.get("type") or "other"
@@ -4986,14 +5139,12 @@ def compute_plan_stats(trip_list, costs=None):
         if t.get("user_currency"):
             user_currency = t["user_currency"]
         if travels:
-            s = _parse_legacy_dt(t.get("start_datetime"))
-            e = _parse_legacy_dt(t.get("end_datetime"))
-            if s:
-                starts.append(s)
-            if e:
-                ends.append(e)
-            if t.get("start_time"):  # has a concrete clock time -> real time resolution
-                any_timed = True
+            # Timezone-correct, anchor-independent positions (see _plan_leg_positions);
+            # day numbers feed the fallback when the plan is day-only (no clock times).
+            ps, pe = item.get("pos_start"), item.get("pos_end")
+            if ps is not None and pe is not None:
+                pos_starts.append(ps)
+                pos_ends.append(pe)
             dn = t.get("day_number")
             if dn is not None:
                 day_starts.append(dn)
@@ -5030,11 +5181,11 @@ def compute_plan_stats(trip_list, costs=None):
         total_shared += converted if converted is not None else float(cp)
     total_price += total_shared
 
-    # Span: when legs carry real clock times use the precise elapsed time; for a
-    # day-only plan there are no times, so use the inclusive day count (Day 1 -> Day 2
-    # is a 2-day trip).
-    if any_timed and starts and ends:
-        span_seconds = (max(ends) - min(starts)).total_seconds()
+    # Span: first departure to last arrival. Timed legs give a precise elapsed time
+    # (positions are timezone-correct UTC epochs); a day-only plan has no clock times,
+    # so fall back to the inclusive day count (Day 1 -> Day 2 is a 2-day trip).
+    if pos_starts and pos_ends:
+        span_seconds = max(pos_ends) - min(pos_starts)
     elif day_starts:
         span_seconds = (max(day_ends) - min(day_starts) + 1) * 86400.0
     else:
@@ -5163,6 +5314,20 @@ def delete_plan_route(username, plan_uuid):
     return redirect(url_for("plan_list", username=username))
 
 
+@app.route("/u/<username>/plan/<plan_uuid>/duplicate", methods=["POST"])
+@login_required
+def duplicate_plan_route(username, plan_uuid):
+    """Fork a plan (with all its legs and shared costs) into a new draft."""
+    plan = get_owned_plan(plan_uuid, username)
+    suffix = lang[session["userinfo"]["lang"]].get("copySuffix", "(copy)")
+    new_uuid = duplicate_plan(
+        plan["uuid"], plan["user_id"], name=f"{plan['name']} {suffix}"
+    )
+    if new_uuid is None:
+        abort(404)
+    return redirect(url_for("plan_view", username=username, plan_uuid=new_uuid))
+
+
 @app.route("/u/<username>/plan/<plan_uuid>/trip/<int:plan_trip_uid>/delete", methods=["POST"])
 @login_required
 def delete_plan_trip_route(username, plan_uuid, plan_trip_uid):
@@ -5201,7 +5366,7 @@ def update_plan_trip_route(username, plan_uuid, plan_trip_uid):
         "unknownType": request.form.get("unknownType"),
         "onlyDateDuration": request.form.get("onlyDateDuration", ""),
     }
-    timing = process_plan_dates(form, path, plan["anchor_date"])
+    timing = process_plan_dates(form, path)
     now = datetime.now()
     with pg_session() as pg:
         pg.execute(
@@ -5247,9 +5412,10 @@ def _get_plan_trip_row(plan, plan_trip_uid):
 @app.route("/u/<username>/plan/<plan_uuid>/trip/<int:plan_trip_uid>/editor")
 @login_required
 def plan_trip_editor(username, plan_uuid, plan_trip_uid):
-    """Open the full trip editor (edit_copy) for a plan-trip. Timing is shown via the
-    datetimes materialised at the plan's anchor_date; the save converts them back to
-    relative day offsets for relative legs (see update_plan_trip_full_route)."""
+    """Open the full trip editor (edit_copy) for a plan-trip. Relative legs are edited
+    as Day N + time (prefilled from their durable day/time columns); precise legs use
+    the stored absolute datetimes. anchor_date is irrelevant here — it only matters at
+    save-as-trips time (validate_plan)."""
     plan = get_owned_plan(plan_uuid, username)
     pt = _get_plan_trip_row(plan, plan_trip_uid)
 
@@ -5360,12 +5526,11 @@ def plan_trip_editor(username, plan_uuid, plan_trip_uid):
 @login_required
 def update_plan_trip_full_route(username, plan_uuid, plan_trip_uid):
     """Save a plan-trip edited in the rich editor: route geometry + all metadata +
-    timing. Relative legs keep their day-offset semantics by converting the edited
-    absolute datetimes back to day numbers relative to the plan's anchor_date."""
+    timing. Relative legs keep their day-offset semantics (Day N + time), stored
+    independently of the plan's anchor_date (see process_plan_dates)."""
     plan = get_owned_plan(plan_uuid, username)
     pt = _get_plan_trip_row(plan, plan_trip_uid)
     formData = dict(request.form)
-    anchor = plan["anchor_date"]
 
     # Path: edited on the map, otherwise keep the stored geometry.
     if formData.get("path"):
@@ -5378,7 +5543,7 @@ def update_plan_trip_full_route(username, plan_uuid, plan_trip_uid):
 
     # The editor exposes the timing modes natively (relative Day N + time, precise,
     # onlyDate, unknown), so honour whatever was chosen.
-    timing = process_plan_dates(formData, path, anchor)
+    timing = process_plan_dates(formData, path)
 
     # Distance/duration/countries: recompute when the route was (re-)drawn, else keep.
     details_parsed = json.loads(formData["details"]) if formData.get("details") else None
@@ -5717,6 +5882,8 @@ def saveFlight(username, type):
         # each parallel to newPath. Passed through as JSON strings (or None).
         altitude = request.form.get("altitude") or None
         timestamps = request.form.get("timestamps") or None
+        # FR24 imports carry a real 3D track (altitude/timestamps); a bare geodesic does not.
+        newTrip.setdefault("route_source", "fr24" if altitude else "router")
         trip = saveTripToDb(
             username=username,
             newTrip=newTrip,
@@ -5725,7 +5892,7 @@ def saveFlight(username, type):
             altitude=altitude,
             timestamps=timestamps,
         )
-        if request.form["fromApp"] == "true":
+        if request.form.get("fromApp") == "true":
             return jsonify({
                 "newTrip": trip.to_dict(),
             }), 200
@@ -5772,6 +5939,7 @@ def copyTrip(username):
         new_trip = update_trip_values_from_form_data(new_trip_id, formData)
 
         update_trip(new_trip_id, new_trip, formData)
+        return jsonify(new_trip_id)
     return ""
 
 
@@ -5839,6 +6007,7 @@ def get_trip(trip_id):
         path=path,
         departure_delay=trip.get("departure_delay"),
         arrival_delay=trip.get("arrival_delay"),
+        route_source=trip.get("route_source") or "router",
     )
 
 
@@ -5957,6 +6126,8 @@ def update_trip_values_from_form_data(trip_id, formData, update_created_ts=False
         arrival_delay=sanitize_param(formData.get("arrival_delay")),
         power_type=power_type,
         co2_override=co2_override,
+        # Re-drawing/importing sends a fresh source; plain metadata edits keep the stored one.
+        route_source=formData.get("route_source") or original_trip.route_source,
     )
 
     # Fresh 3D flight track when the route was (re-)imported from FR24; absent on
@@ -6359,12 +6530,14 @@ def stationAutocomplete():
     return jsonify(responseJson)
 
 @app.route("/u/<username>/getManAndOps/<station_type>", methods=["GET", "POST"])
+@login_required
 def getManAndOps(username, station_type):
     manualStations = {}
     visitedStations = {}
     with pg_session() as pg:
         for station in pg.execute(
-            get_manual_stations_query(), {"station_type": station_type}
+            get_manual_stations_query(),
+            {"station_type": station_type, "creator": username},
         ).fetchall():
             manualStations[station["name"]] = [
                 [station["lat"], station["lng"]],
@@ -6811,6 +6984,10 @@ def fetchTripsPaths(username, lastLocal, public):
     return {"trips": tripList, "lastLocal": lastLocal, "idList": idList}
 
 
+# Register visualisation blueprint here — after fetchTripsPaths is defined.
+viz_module.register(app, fetchTripsPaths)
+
+
 @app.route("/public/<username>/getTripsPaths/<lastLocal>", methods=["GET", "POST"])
 @public_required  # Public access check
 def public_getTripsPaths(username, lastLocal):
@@ -6822,6 +6999,47 @@ def public_getTripsPaths(username, lastLocal):
 @login_required  # Login access check
 def get_trip_paths(username, lastLocal):
     result = fetchTripsPaths(username, lastLocal, public=0)
+    return jsonify(result)
+
+
+def fetchUpdatedTrips(username, lastLocal, public):
+    tripList = []
+
+    user_id = get_user_id(username)
+    with pg_session() as pg:
+        idList = [
+            row["uid"]
+            for row in pg.execute(
+                "SELECT trip_id AS uid FROM trips WHERE user_id = :user_id",
+                {"user_id": user_id},
+            ).fetchall()
+        ]
+
+        trips = pg.execute(
+            get_updated_user_trips_query(),
+            {
+                "user_id": user_id,
+                "lastLocal": lastLocal,
+                "public": public,
+                "friend": int(current_user_is_friend_with(username)),
+            },
+        ).fetchall()
+
+    for trip in trips:
+        path = geom_geojson_to_coords(trip._mapping.get("geojson"))
+        trip = adapt_pg_trip_row(trip._mapping, username)
+        trip.pop("geojson", None)
+        trip.pop("planned_future", None)
+        tripList.append({"trip": trip, "path": path})
+
+    lastLocal = datetime.strftime(datetime.now(), "%Y-%m-%dT%H:%M:%S.%f")
+    return {"trips": tripList, "lastLocal": lastLocal, "idList": idList}
+
+
+@app.route("/u/<username>/getUpdatedTrips/<lastLocal>", methods=["GET", "POST"])
+@login_required
+def get_updated_trips(username, lastLocal):
+    result = fetchUpdatedTrips(username, lastLocal, public=0)
     return jsonify(result)
 
 
@@ -7041,6 +7259,11 @@ def processPublicTrips(tripIds):
             and getattr(user, "premium", False)
             and getattr(user, "flight_3d", False)
         )
+        if trip.get("material_type_advanced"):
+            with pg_session() as pg:
+                trip["trainset"] = public_trainset_info(
+                    pg, trip["material_type_advanced"], trip["username"]
+                )
         tripList.append(
             {
                 "time": trip["time"],
@@ -7480,6 +7703,11 @@ def get_trips_api_internal(username, is_public=False):
     draw = request.form.get("draw", type=int, default=1)
     past = int(request.args.get("projects") == "False")
     filter_types = request.form.get("filterTypes", type=int, default=0)
+    # Past page's "show upcoming" toggle: fold dated future trips into the past
+    # listing (they sort on top with the default temporal desc order).
+    include_planned = int(
+        past == 1 and request.form.get("includeFuture", type=int, default=0) == 1
+    )
 
     is_friend = current_user_is_friend_with(username)
 
@@ -7522,7 +7750,11 @@ def get_trips_api_internal(username, is_public=False):
 
     # Build additional WHERE conditions for column-specific searches
     additional_conditions = []
-    search_params = {"username": username, "past": past}
+    search_params = {
+        "username": username,
+        "past": past,
+        "include_planned": include_planned,
+    }
     
     # Add column-specific search conditions
     for column_index, search_data in column_searches.items():
@@ -7649,12 +7881,12 @@ def get_trips_api_internal(username, is_public=False):
         ]
         terms = [like.format(col=col) for col in global_search_columns]
         terms.append(
-            "EXISTS (SELECT 1 FROM tickets tk WHERE tk.uid = ticket_id"
+            "EXISTS (SELECT 1 FROM tickets tk WHERE tk.uid = FilteredTrips.ticket_id"
             f" AND remove_diacritics(LOWER(COALESCE(tk.name, ''))) LIKE remove_diacritics(LOWER(:{param})))"
         )
         terms.append(
             "EXISTS (SELECT 1 FROM tags_associations fta JOIN tags ft ON fta.tag_id = ft.uid"
-            f" WHERE fta.trip_id = uid AND remove_diacritics(LOWER(ft.name)) LIKE remove_diacritics(LOWER(:{param})))"
+            f" WHERE fta.trip_id = FilteredTrips.uid AND remove_diacritics(LOWER(ft.name)) LIKE remove_diacritics(LOWER(:{param})))"
         )
         return "(" + " OR ".join(terms) + ")"
 
@@ -7897,6 +8129,7 @@ def user_settings(username):
         # Premium-only toggle: only honour it for premium users so a crafted POST
         # can't enable it without premium.
         params["flight_3d"] = ("flight_3d" in request.form) and bool(user.premium)
+        params["live_tracking"] = ("live_tracking" in request.form) and bool(user.premium)
 
         for param in params:
             if getattr(user, param) != params[param]:
@@ -7906,16 +8139,6 @@ def user_settings(username):
 
         authDb.session.commit()
 
-    # Automatic logging is owner-only for now: only mint/show the token then.
-    gps_upload_url = None
-    if session.get("userinfo", {}).get("is_owner"):
-        if not user.gps_token:
-            user.gps_token = secrets.token_urlsafe(32)
-            authDb.session.commit()
-        gps_upload_url = url_for(
-            "gps_logger_upload", token=user.gps_token, _external=True
-        )
-
     langs = getLangDropdown(user)
 
     share_level = user.share_level
@@ -7924,6 +8147,7 @@ def user_settings(username):
     appear_on_global_checked = "checked" if user.appear_on_global else ""
     colorblind_checked = "checked" if user.colorblind else ""
     flight_3d_checked = "checked" if user.flight_3d else ""
+    live_tracking_checked = "checked" if user.live_tracking else ""
 
     # Temporary: preview the redesigned settings page with ?v2=1 (owner only).
     template = (
@@ -7944,11 +8168,55 @@ def user_settings(username):
         appear_on_global_checked=appear_on_global_checked,
         colorblind_checked=colorblind_checked,
         flight_3d_checked=flight_3d_checked,
+        live_tracking_checked=live_tracking_checked,
         user_currency=user.user_currency,
         default_landing=user.default_landing,
         user_tileserver=user.tileserver,
         user_globe=user.globe,
+        **lang[session["userinfo"]["lang"]],
+        **session["userinfo"],
+    )
+
+
+@app.route("/u/<username>/gps", methods=["GET"])
+@login_required
+def gps_settings(username):
+    """Legacy alias for the API/integrations page (kept so old shared links work)."""
+    return redirect(url_for("api_settings", username=username))
+
+
+@app.route("/u/<username>/api", methods=["GET"])
+@login_required
+def api_settings(username):
+    """
+    Standalone API/integrations page: GPSLogger upload URL + MCP server URL.
+
+    Deliberately not linked from the settings UI: it is reachable only by
+    knowing the URL, so the page can be shared with someone else who is
+    setting up GPSLogger to log trips for this user.
+    """
+    user = User.query.filter_by(username=username).first()
+    if not user.gps_token:
+        user.gps_token = secrets.token_urlsafe(32)
+        authDb.session.commit()
+    gps_upload_url = external_url("gps_logger_upload", token=user.gps_token)
+
+    # MCP server access is premium-only. Mint the token lazily for premium users so
+    # the connection URL can be shown on this page.
+    mcp_url = None
+    if user.premium:
+        if not user.mcp_token:
+            user.mcp_token = secrets.token_urlsafe(32)
+            authDb.session.commit()
+        mcp_url = external_url("mcp.handle") + f"?api_key={user.mcp_token}"
+
+    return render_template(
+        "api_settings.html",
+        title=lang[session["userinfo"]["lang"]]["gpsLoggingTitle"],
+        username=username,
         gps_upload_url=gps_upload_url,
+        mcp_url=mcp_url,
+        mcp_premium=user.premium,
         **lang[session["userinfo"]["lang"]],
         **session["userinfo"],
     )
@@ -7961,7 +8229,46 @@ def regenerate_gps_token(username):
     user = User.query.filter_by(username=username).first()
     user.gps_token = secrets.token_urlsafe(32)
     authDb.session.commit()
-    return redirect(url_for("user_settings", username=username))
+    return redirect(url_for("api_settings", username=username))
+
+
+@app.route("/u/<username>/mcp", methods=["GET"])
+@login_required
+def mcp_settings(username):
+    """Return this user's MCP connection details (mints the token on first use).
+
+    The token authenticates an external AI to the MCP server (/mcp), letting it
+    list, create and delete this user's trips. Keep it secret; rotate via
+    /u/<username>/mcp_token/regenerate.
+    """
+    user = User.query.filter_by(username=username).first()
+    if not user.premium:
+        abort(403)
+    if not user.mcp_token:
+        user.mcp_token = secrets.token_urlsafe(32)
+        authDb.session.commit()
+    mcp_url = external_url("mcp.handle") + f"?api_key={user.mcp_token}"
+    return jsonify({
+        "url": mcp_url,
+        "token": user.mcp_token,
+        "config": {
+            "mcpServers": {
+                "trainlog": {"type": "streamable-http", "url": mcp_url}
+            }
+        },
+    })
+
+
+@app.route("/u/<username>/mcp_token/regenerate", methods=["POST"])
+@login_required
+def regenerate_mcp_token(username):
+    """Revoke the old MCP token by minting a fresh one (premium-only)."""
+    user = User.query.filter_by(username=username).first()
+    if not user.premium:
+        abort(403)
+    user.mcp_token = secrets.token_urlsafe(32)
+    authDb.session.commit()
+    return redirect(url_for("api_settings", username=username))
 
 
 @app.route("/u/<username>/settings_app", methods=["GET", "POST"])
@@ -8191,6 +8498,7 @@ def edit_copy_trip(username, tripId, edit_copy_type):
         tripType=tripType,
         tripTicketId=tripTicketId or "",
         wplist=wplist,
+        route_source=trip.get("route_source") or "router",
         tripNotes=tripNotes or "",
         colorblind=colorblind,
         tripDepartureDelay=tripDepartureDelay,
@@ -8801,7 +9109,7 @@ def detect_precision(start_date, end_date):
 
 
 @app.route("/admin/manual")
-@admin_required
+@owner_required
 def adminManual():
     with pg_session() as pg:
         stationsList = [
@@ -9015,11 +9323,72 @@ def upload_image(username):
 
 
 @app.route("/deleteManual/<int:id>", methods=["POST"])
-@admin_required
+@owner_required
 def deleteManual(id):
     with pg_session() as pg:
         pg.execute("DELETE FROM manual_stations WHERE uid = :uid", {"uid": id})
     return redirect(url_for("adminManual"))
+
+
+@app.route("/u/<username>/manualStations")
+@login_required
+def userManualStations(username):
+    with pg_session() as pg:
+        stationsList = [
+            dict(row._mapping)
+            for row in pg.execute(
+                "SELECT * FROM manual_stations WHERE creator = :creator"
+                " ORDER BY station_type, name",
+                {"creator": username},
+            ).fetchall()
+        ]
+    return render_template(
+        "manual_stations.html",
+        stationsList=stationsList,
+        username=username,
+        nav="bootstrap/navigation.html",
+        isCurrent=has_current_trip(get_user_id()),
+        **lang[session["userinfo"]["lang"]],
+        **session["userinfo"],
+    )
+
+
+@app.route("/u/<username>/manualStations/<int:id>/update", methods=["POST"])
+@login_required
+def updateUserManualStation(username, id):
+    with pg_session() as pg:
+        owner_row = pg.execute(
+            "SELECT creator FROM manual_stations WHERE uid = :uid", {"uid": id}
+        ).fetchone()
+        if owner_row is None or owner_row["creator"] != username:
+            abort(401)
+        pg.execute(
+            """
+            UPDATE manual_stations
+            SET name = :name, lat = :lat, lng = :lng
+            WHERE uid = :uid
+            """,
+            {
+                "name": request.form.get("name"),
+                "lat": request.form.get("lat"),
+                "lng": request.form.get("lng"),
+                "uid": id,
+            },
+        )
+    return redirect(url_for("userManualStations", username=username))
+
+
+@app.route("/u/<username>/manualStations/<int:id>/delete", methods=["POST"])
+@login_required
+def deleteUserManualStation(username, id):
+    with pg_session() as pg:
+        owner_row = pg.execute(
+            "SELECT creator FROM manual_stations WHERE uid = :uid", {"uid": id}
+        ).fetchone()
+        if owner_row is None or owner_row["creator"] != username:
+            abort(401)
+        pg.execute("DELETE FROM manual_stations WHERE uid = :uid", {"uid": id})
+    return redirect(url_for("userManualStations", username=username))
 
 
 @app.route("/editStation/<int:id>", methods=["GET", "POST"])
@@ -9166,7 +9535,7 @@ def stations():
 
 
 @app.route("/editManual/<int:id>", methods=["GET", "POST"])
-@admin_required
+@owner_required
 def editManual(id):
     with pg_session() as pg:
         if request.method == "POST":
@@ -10114,7 +10483,6 @@ def generate_visited_squares_geojson(username):
     land_squares = set()
     air_squares = set()
     visited_squares = {}
-    current_utc_datetime = datetime.now()
 
     with pg_session() as pg:
         trips = pg.execute(
@@ -10123,9 +10491,12 @@ def generate_visited_squares_geojson(username):
                 FROM trips
                 WHERE user_id = :user_id
                   AND NOT is_project
-                  AND COALESCE(utc_start_datetime, start_datetime) < :now
+                  AND (
+                        COALESCE(utc_start_datetime, start_datetime) IS NULL
+                        OR NOW() > COALESCE(utc_start_datetime, start_datetime)
+                      )
             """,
-            {"user_id": get_user_id(username), "now": current_utc_datetime},
+            {"user_id": get_user_id(username)},
         ).fetchall()
 
         for trip in trips:
@@ -10611,8 +10982,22 @@ def get_current_trips_data(public_only=True):
     # 1. Get all trips that are currently in progress
     with pg_session() as pg:
         rows = pg.execute("""
-            SELECT *
+            SELECT trips.*, airliners.manufacturer, airliners.model,
+                   sp.country_code AS vessel_country
             FROM trips
+            -- Air trips store the ICAO type code in material_type; airliners carries
+            -- the readable manufacturer/model shown in the popup.
+            LEFT JOIN airliners ON trips.material_type = airliners.iata
+            -- A ship's flag state only lives in ship_pictures, so surface it here or
+            -- the flag could not appear until the photo had been fetched. vessel_name
+            -- is not unique, hence the lateral pick (duplicates agree on country).
+            LEFT JOIN LATERAL (
+                SELECT country_code
+                FROM ship_pictures
+                WHERE vessel_name = trips.reg
+                ORDER BY fetch_date DESC NULLS LAST, uid DESC
+                LIMIT 1
+            ) sp ON TRUE
             WHERE (utc_start_datetime + COALESCE(departure_delay, 0) * interval '1 second') <= NOW()
               AND (utc_end_datetime + COALESCE(arrival_delay, 0) * interval '1 second') >= NOW()
               AND (visibility = 'public' OR (visibility IS NULL AND trip_type NOT IN ('poi', 'accommodation', 'restaurant', 'walk', 'cycle', 'car')))
@@ -10659,19 +11044,46 @@ def get_current_trips_data(public_only=True):
         ).fetchall()
 
     paths = {path["trip_id"]: path["path"] for path in pathResult}
-    
+
+    # Every trip here is in progress by definition, so this is the natural home for live
+    # flight tracks: any flight whose owner opted in gets its real flown-so-far path
+    # instead of a straight geodesic. Failures are swallowed because a live overlay must
+    # never take down the global map. Cost is bounded inside get_live_tracks by a
+    # per-trip, globally shared refresh floor.
+    try:
+        live_tracks = get_live_tracks(trip_ids)
+    except Exception:
+        app.logger.exception("Live track lookup failed for the current-trips map")
+        live_tracks = {}
+
     result = []
-    for trip in filtered_trips:
-        path = json.loads(paths.get(trip["uid"], "[]"))
-        result.append(
-            {
-                "username": trip["username"],
-                "trip": dict(trip),
-                "path": path,
-                "distances": getDistanceFromPath(path),
-            }
-        )
-    
+    with pg_session() as pg:
+        for trip in filtered_trips:
+            path = json.loads(paths.get(trip["uid"], "[]"))
+            trip = dict(trip)
+            live = live_tracks.get(trip["uid"])
+            if live and live.get("path"):
+                # Keep the logged endpoints so the client can bridge the track back to
+                # the real airports: the not-yet-flown remainder at the end, and at the
+                # start the gap left because FR24's public track usually begins at the
+                # first airborne contact rather than on the runway.
+                trip["live_origin"] = path[0] if path else None
+                trip["live_destination"] = path[-1] if path else None
+                path = live["path"]
+                trip["live_tracked"] = True
+            if trip.get("material_type_advanced"):
+                trip["trainset"] = public_trainset_info(
+                    pg, trip["material_type_advanced"], trip["username"]
+                )
+            result.append(
+                {
+                    "username": trip["username"],
+                    "trip": trip,
+                    "path": path,
+                    "distances": getDistanceFromPath(path),
+                }
+            )
+
     return result
 
 
@@ -10741,6 +11153,7 @@ def bestagons_points():
         conditional=True,
         last_modified=os.path.getmtime(path),
     )
+
 
 
 @app.route("/live_map")
@@ -10911,6 +11324,30 @@ def get_flag(code):
     return resp
 
 
+@app.route("/<path:subpath>", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+def user_shortcut(subpath):
+    user = getUser()
+    qs = request.query_string.decode("latin-1")
+    if user != "public":
+        target = f"/u/{user}/{subpath}"
+        adapter = app.url_map.bind(request.host)
+        try:
+            endpoint, _ = adapter.match(target, method=request.method)
+            if endpoint == "user_shortcut":
+                abort(404)
+        except RequestRedirect:
+            pass
+        except (NotFound, MethodNotAllowed):
+            abort(404)
+        if qs:
+            target = f"{target}?{qs}"
+        return redirect(target, 307)
+    next_url = f"/{subpath}"
+    if qs:
+        next_url = f"{next_url}?{qs}"
+    return redirect(url_for("login") + "?" + urllib.parse.urlencode({"next": next_url}), 302)
+
+
 def ensure_auth_db_columns():
     """Idempotently add columns to the existing auth.db `user` table.
 
@@ -10923,6 +11360,18 @@ def ensure_auth_db_columns():
     if "gps_token" not in existing:
         authDb.session.execute(
             sqlalchemy.text("ALTER TABLE user ADD COLUMN gps_token VARCHAR(100) DEFAULT ''")
+        )
+        authDb.session.commit()
+    if "mcp_token" not in existing:
+        authDb.session.execute(
+            sqlalchemy.text("ALTER TABLE user ADD COLUMN mcp_token VARCHAR(100) DEFAULT ''")
+        )
+        authDb.session.commit()
+    if "live_tracking" not in existing:
+        authDb.session.execute(
+            sqlalchemy.text(
+                "ALTER TABLE user ADD COLUMN live_tracking BOOLEAN NOT NULL DEFAULT 0"
+            )
         )
         authDb.session.commit()
 

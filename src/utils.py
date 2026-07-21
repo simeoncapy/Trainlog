@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 import smtplib
 import sqlite3
@@ -15,8 +16,12 @@ import requests
 from flask import abort, redirect, request, session, url_for
 from timezonefinder import TimezoneFinder
 
+# TimezoneFinder loads its boundary data on construction, which is expensive. It is
+# thread-safe for read-only lookups, so build it once and reuse it everywhere.
+_timezone_finder = TimezoneFinder()
+
 from py.utils import load_config
-from src.consts import DbNames
+from src.consts import DbNames, Env
 from src.pg import pg_session
 from src.sql.trips import get_current_trip_query
 from src.users import Friendship, User, authDb
@@ -177,8 +182,7 @@ def processDates(new_trip, new_path):
 
 
 def getUtcDatetime(lat, lng, dateTime):
-    tf = TimezoneFinder()
-    timezone_str = tf.timezone_at(lat=lat, lng=lng)
+    timezone_str = _timezone_finder.timezone_at(lat=lat, lng=lng)
 
     # Handle override for specific zones
     if timezone_str in ["Asia/Urumqi", "Asia/Kashgar"]:
@@ -194,9 +198,7 @@ def getUtcDatetime(lat, lng, dateTime):
 
 
 def getLocalDatetime(lat, lng, dateTime):
-    # Instantiate TimezoneFinder and find timezone for given lat, lng
-    tf = TimezoneFinder()
-    timezone_str = tf.timezone_at(lat=lat, lng=lng)
+    timezone_str = _timezone_finder.timezone_at(lat=lat, lng=lng)
 
     if timezone_str in ["Asia/Urumqi", "Asia/Kashgar"]:
         local_timezone = pytz.FixedOffset(480)  # 480 minutes = 8 hours
@@ -593,6 +595,19 @@ def current_user_is_friend_with(target_username):
         )
     else:
         return 0
+
+
+def external_url(*args, **kwargs):
+    """url_for(_external=True) but forced to https outside local dev.
+
+    Behind a reverse proxy Flask only sees the internal http request, so
+    _external URLs come out as http://. We don't terminate TLS, the proxy does,
+    so the public URL is https everywhere except local.
+    """
+    url = url_for(*args, _external=True, **kwargs)
+    if os.environ.get("ENVIRONMENT") != Env.LOCAL.value and url.startswith("http://"):
+        url = "https://" + url[len("http://"):]
+    return url
 
 
 def parse_date(date: str):

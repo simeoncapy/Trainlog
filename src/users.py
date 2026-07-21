@@ -29,6 +29,9 @@ class User(authDb.Model):
     # Per-user secret token for the GPSLogger GPX ingest endpoint
     # (/api/gps/<token>/upload). Scoped to GPS ingest only; regenerable.
     gps_token = authDb.Column(authDb.String(100), default="")
+    # Per-user secret token for the MCP server (/mcp?api_key=<token>), letting an
+    # external AI manage this user's trips. Regenerable; revokes on regenerate.
+    mcp_token = authDb.Column(authDb.String(100), default="")
     default_landing = authDb.Column(authDb.String(20), nullable=False, default="map")
     appear_on_global = authDb.Column(authDb.Boolean, nullable=False, default=False)
     tileserver = authDb.Column(authDb.String(50), nullable=False, default="default")
@@ -37,6 +40,10 @@ class User(authDb.Model):
     feature_admin = authDb.Column(authDb.Boolean, nullable=False, default=False)
     # Premium-only: render flight tracks as a 3D altitude profile on trip pages.
     flight_3d = authDb.Column(authDb.Boolean, nullable=False, default=False)
+    # Premium-only: while a flight is in the air, draw its flown-so-far track from FR24
+    # instead of a geodesic. Off by default even for premium, because broadcasting a
+    # real-time position is a materially different disclosure from a historical log.
+    live_tracking = authDb.Column(authDb.Boolean, nullable=False, default=False)
 
     def toDict(self):
         return {
@@ -52,6 +59,7 @@ class User(authDb.Model):
             "last_login": self.last_login,
             "reset_token": self.reset_token,
             "gps_token": self.gps_token,
+            "mcp_token": self.mcp_token,
             "share_level": self.share_level,
             "user_currency": self.user_currency,
             "colorblind": self.colorblind,
@@ -60,6 +68,7 @@ class User(authDb.Model):
             "premium": self.premium,
             "feature_admin": self.feature_admin,
             "flight_3d": self.flight_3d,
+            "live_tracking": self.live_tracking,
         }
 
     def is_public(self):
