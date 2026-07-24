@@ -145,7 +145,10 @@ def parse_gpx_files(files, source, username, notes=""):
         if not file.filename.endswith(".gpx"):
             raise GpxIngestError(f"{file.filename} is not a valid GPX file")
 
-        gpx = gpxpy.parse(file.stream)
+        try:
+            gpx = gpxpy.parse(file.stream)
+        except gpxpy.gpx.GPXException as e:
+            raise GpxIngestError(f"{file.filename} is not readable GPX: {e}") from e
 
         points = None
         start_time = None

@@ -376,8 +376,14 @@
           </div>
         </div>
         <div class="mb-3">
-          <label class="form-label">{{operator}}</label>
-          <input type="text" class="form-control mass-edit-field" data-field="operator" />
+          <label class="form-label" for="massEditOperatorSearch">{{operator}}</label>
+          {# The submitted value stays free comma-separated text and keeps the
+             mass-edit-field hooks, so populate/dirty-tracking work unchanged; the
+             pills are just a view of it. #}
+          <input type="hidden" class="mass-edit-field" data-field="operator" id="massEditOperator" />
+          <div class="operatorPillsField" id="massEditOperatorPills">
+            <input type="text" id="massEditOperatorSearch" class="op-pill-placeholder" autocomplete="off" />
+          </div>
         </div>
         <div class="mb-3">
           <label class="form-label">{{lineName}}</label>
@@ -470,7 +476,6 @@
 
 {% include "includes/trainset_builder_modal.html" %}
 
-<script src="{{ url_for('static', filename='js/util.js') }}"></script>
 <script type="text/javascript">
 const checkedTrips = [];
 const checkedTripData = {};
@@ -697,6 +702,19 @@ function processHiddenData(rowIdx, columns){
                     }
                 });
                 col.data = `<span id=airframe${rowIdx} >${full_name}</span>`
+            }
+        }
+        if (col.title == "{{operator}}") {
+            // Multi-operator trips get the roomier one-per-line list here.
+            var operatorRow = tableObject.row(rowIdx).data();
+            var expandedOperators = renderOperatorList(operatorRow);
+            if (expandedOperators) {
+                col.data = expandedOperators;
+                // Past four operators the compact 2x2 cell cannot show them all, and
+                // on desktop nothing is hidden by responsive, so the extras would be
+                // invisible with no way to reach them. Force the column into the
+                // detail row instead — same mechanism the delay columns use.
+                if (operatorsOverflow(operatorRow)) col.hidden = true;
             }
         }
         if (col.title == "{{material_type}}" && isTrain) {
@@ -1547,7 +1565,6 @@ function showMultilink() {
     // Add white space to make sure multilink doesn't hide 
     if ($('.bottom-space').length === 0) {  
         $('body').append('<div class="bottom-space"></div>');
-        console.log($('.bottom-space'))
     }
 }
 
@@ -1593,11 +1610,15 @@ $('.deleteButton').off('click').on('click', function() {
 
     tableObject.rows().every( function ( rowIdx, tableLoop, rowLoop ) {
         if ($(this.node()).hasClass("even") || $(this.node()).hasClass("odd")){
-            var hasHidden = false;
             var controlElement;
             var rowData = this.data();
-            // Delay data appears in sub-table even when columns aren't hidden by responsive
-            var hasDelaySubtable = rowData && (rowData.departure_delay || rowData.arrival_delay);
+            // Seeded true when the detail row carries something that is not a cell
+            // responsive hid: a delay breakdown, or operators beyond the four the
+            // compact cell can show. Either way the control must stay usable, since
+            // the detail row is the only place that content exists.
+            var hasHidden = Boolean(rowData && (
+                rowData.departure_delay || rowData.arrival_delay || operatorsOverflow(rowData)
+            ));
             $(this.node()).children().each(
                 function(index, element){
                     if ($(element).hasClass("dtr-control"))
@@ -1613,7 +1634,7 @@ $('.deleteButton').off('click').on('click', function() {
                 }
             );
 
-            if(!hasHidden && !hasDelaySubtable) {
+            if(!hasHidden) {
                 controlElement.addClass("noHidden");
             }
         }
@@ -1726,6 +1747,48 @@ function _massEditPrefillStation(countrySelId, stationInputId, trips, field) {
     }
 }
 
+/* Operator pills in the mass-edit form.
+ *
+ * The suggestion list is per pool (transport / accommodation / car / poi), so it is
+ * fetched for the type of the selected trips and cached. Trips of mixed types fall
+ * back to the transport pool, which is what all but three trip types resolve against
+ * anyway.
+ */
+var _massEditOperatorPills = null;
+var _massEditManAndOpsCache = {};
+
+function _massEditSetupOperatorPills(trips) {
+    var types = new Set(trips.map(function(t) { return t.type; }));
+    var stationType = types.size === 1 ? [...types][0] : 'train';
+    var hidden = $('#massEditOperator');
+    var search = $('#massEditOperatorSearch');
+
+    // Mirror the placeholder the populate loop put on the hidden input, so a mixed
+    // selection still reads "multiple values" in the visible field.
+    search.attr('placeholder', hidden.attr('placeholder') || '');
+    search.data('placeholder', hidden.attr('placeholder') || '');
+
+    function build(manAndOps) {
+        // Rebuilt per opening: the pool, and therefore the suggestion list, depends
+        // on the current selection.
+        $('#massEditOperatorPills .op-pill').remove();
+        _massEditOperatorPills = operatorPillsInput(
+            hidden, search, $('#massEditOperatorPills'), manAndOps,
+            "{{ url_for('static', filename='') }}", stationType);
+    }
+
+    if (_massEditManAndOpsCache[stationType]) {
+        build(_massEditManAndOpsCache[stationType]);
+        return;
+    }
+    $.get("{{ url_for('getManAndOps', username=username, station_type='STATION_TYPE') }}"
+              .replace('STATION_TYPE', stationType),
+          function(manAndOps) {
+              _massEditManAndOpsCache[stationType] = manAndOps;
+              build(manAndOps);
+          });
+}
+
 function openMassEdit() {
     massEditDirtyFields.clear();
     const trips = Object.values(checkedTripData);
@@ -1755,6 +1818,11 @@ function openMassEdit() {
             }
         }
     });
+
+    // Operator pills follow the hidden field the loop above just populated. Loaded
+    // for the pool the selected trips belong to, so bulk-editing hotels offers
+    // accommodation operators rather than railways.
+    _massEditSetupOperatorPills(trips);
 
     // Station fields
     _massEditPrefillStation('massEditOriginCountry', 'massEditOriginStation', trips, 'origin_station');

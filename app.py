@@ -166,6 +166,7 @@ from src.global_map import (
     build_status,
     get_cache_path,
 )
+from src.operators import find_operator_ids, get_trip_operator_logos
 from src.pg import setup_db, pg_session
 from src.suspicious_activity import (
     check_denied_login,
@@ -4253,19 +4254,28 @@ def listOperatorsLogos(tripType=None):
 
     with pg_session() as pg:
         for logo_type in selected_types:
-            # Fetch logos based on operator_type field
+            # Keyed by every alias, not just short_name, so a user typing CFF or FFS
+            # is offered the SBB logo just as one typing SBB is. The stats chart and
+            # the trip-form autocomplete both look names up in this dict directly.
+            #
+            # DISTINCT ON picks the current logo. Operators can have several, one per
+            # era (SNCF has seven, 1937 to 2011), and neither the stats chart nor the
+            # autocomplete has a date to choose by — without this the last row to
+            # arrive won, so the chart showed an arbitrary historical logo.
             rows = pg.execute(
                 """
-                SELECT o.short_name, l.logo_url
+                SELECT DISTINCT ON (a.alias) a.alias, l.logo_url
                 FROM operators o
+                JOIN operator_aliases a ON a.operator_id = o.operator_id
                 JOIN operator_logos l ON o.operator_id = l.operator_id
                 WHERE o.operator_type = :logo_type
+                ORDER BY a.alias, l.effective_date DESC NULLS LAST, l.uid DESC
             """,
                 {"logo_type": logo_type},
             ).fetchall()
 
             for row in rows:
-                logoURLs[row["short_name"]] = row["logo_url"]
+                logoURLs[row["alias"]] = row["logo_url"]
 
     return logoURLs
 
@@ -6587,13 +6597,63 @@ def getManAndOps(username, station_type):
 
     material_types = {material_type: None for material_type in material_types_from_db if material_type}
 
+    hints, canonical = operator_autocomplete_meta(tripType)
     manAndOps = {
         "operators": result,
+        "operatorHints": hints,
+        # Every alias -> its operator's short_name, so the autocomplete can collapse
+        # an operator's spellings to a single suggestion (see operatorPillsInput).
+        "operatorCanonical": canonical,
         "manualStations": manualStations,
         "materialTypes": material_types,
         "visitedStations": visitedStations,
     }
     return jsonify(manAndOps)
+
+
+def operator_autocomplete_meta(operator_type):
+    """Per-spelling metadata for the operator autocomplete, in one pass over aliases.
+
+    Returns (hints, canonical):
+
+    - hints: {alias -> muted subtitle}. A suggestion on its own does not say what it
+      maps to ("CFF" gives no clue it is the Chemins de fer fédéraux suisses); the hint
+      is whichever of the operator's names the spelling is *not*. Only entries that add
+      something are included, so for the majority where long_name == short_name the map
+      stays small.
+    - canonical: {alias -> short_name}, every spelling included. Lets the autocomplete
+      show one suggestion per operator (its short_name) even when several of its
+      spellings match the term, instead of listing ETHIAD, "Ethiad airways", etc.
+      separately.
+    """
+    with pg_session() as pg:
+        rows = pg.execute(
+            """
+            SELECT a.alias, o.short_name, o.long_name
+            FROM operator_aliases a
+            JOIN operators o ON o.operator_id = a.operator_id
+            WHERE o.operator_type = :operator_type
+            """,
+            {"operator_type": operator_type},
+        ).fetchall()
+
+    hints = {}
+    canonical = {}
+    for alias, short_name, long_name in rows:
+        canonical[alias] = short_name
+        has_long = long_name and long_name != short_name
+        if alias == short_name:
+            # Canonical spelling: the long name is the only thing left to add.
+            hint = long_name if has_long else None
+        elif alias == long_name:
+            hint = short_name
+        else:
+            # An alias: say which operator it resolves to, with its long name when
+            # that adds anything.
+            hint = f"{short_name} — {long_name}" if has_long else short_name
+        if hint:
+            hints[alias] = hint
+    return hints, canonical
 
 
 @app.route("/getAdminUsersData", methods=["POST"])
@@ -7082,53 +7142,6 @@ def get_current_trip_path(username):
     return jsonify(sorted_trip_list)
 
 
-def get_logo_url(operator, trip):
-    operator_id = operator["operator_id"]
-    utc_filtered_start_datetime = trip["utc_filtered_start_datetime"]
-    with pg_session() as pg:
-        if utc_filtered_start_datetime == -1:
-            # Fetch the oldest logo
-            logo = pg.execute(
-                """
-                SELECT l.logo_url
-                FROM operator_logos l
-                WHERE l.operator_id = :operator_id
-                ORDER BY l.effective_date ASC NULLS FIRST
-                LIMIT 1
-            """,
-                {"operator_id": operator_id},
-            ).fetchone()
-        elif utc_filtered_start_datetime == 1:
-            # Fetch the latest logo
-            logo = pg.execute(
-                """
-                SELECT l.logo_url
-                FROM operator_logos l
-                WHERE l.operator_id = :operator_id
-                ORDER BY l.effective_date DESC NULLS LAST
-                LIMIT 1
-            """,
-                {"operator_id": operator_id},
-            ).fetchone()
-        else:
-            # Fetch the logo closest to the trip start date
-            logo = pg.execute(
-                """
-                SELECT l.logo_url
-                FROM operator_logos l
-                WHERE l.operator_id = :operator_id
-                  AND (l.effective_date <= :start OR l.effective_date IS NULL)
-                ORDER BY l.effective_date DESC NULLS LAST
-                LIMIT 1
-            """,
-                {"operator_id": operator_id, "start": utc_filtered_start_datetime},
-            ).fetchone()
-    if logo:
-        return logo["logo_url"]
-    else:
-        return None
-
-
 def processPublicTrips(tripIds):
     user_currency = getLoggedUserCurrency()
     for trip in tripIds.split(","):
@@ -7175,29 +7188,23 @@ def processPublicTrips(tripIds):
     for tripId in tripIds:
         trip = formatTrip(get_trip_pg(tripId))
 
-        # Process multi operator logos
+        # Process multi operator logos. One query for the whole trip, resolved through
+        # operator_aliases, instead of two per operator matched on exact short_name.
         if "," in str(trip["operator"]):
-            operator_names = trip["operator"]
-            operator_list = [op.strip() for op in operator_names.split(",")]
+            operator_logos = get_trip_operator_logos(
+                tripId, trip["utc_filtered_start_datetime"]
+            )
 
-            operator_logos = []
-            for op_name in operator_list:
-                with pg_session() as pg:
-                    operator = pg.execute(
-                        "SELECT * FROM operators WHERE short_name = :sn", {"sn": op_name}
-                    ).fetchone()
-                if operator:
-                    operator = dict(operator._mapping)
-                    logo_url = get_logo_url(operator, trip)
-                    operator_logos.append(
-                        {"operator_name": operator["short_name"], "logo_url": logo_url}
-                    )
+            # An empty list would read as "logos present" downstream and render
+            # neither logo nor operator text, so only take over when there is
+            # something to show. Entries without a logo are kept — the templates
+            # fall back to the operator's name.
+            if operator_logos:
+                trip["multi_operators"] = operator_logos
 
-            trip["multi_operators"] = operator_logos
-
-            # Remove operator_name and logo_url from trip if they exist
-            trip.pop("operator_name", None)
-            trip.pop("logo_url", None)
+                # Remove operator_name and logo_url from trip if they exist
+                trip.pop("operator_name", None)
+                trip.pop("logo_url", None)
 
         # Process pricing
         if trip["ticket_id"] not in (None, ""):
@@ -7798,9 +7805,23 @@ def get_trips_api_internal(username, is_public=False):
                     additional_conditions.append(f"COALESCE(to_char(start_datetime, 'YYYY-MM-DD'), '') LIKE :{param_name}")
             elif column_name == "operator":
                 if is_exact:
-                    additional_conditions.append(f"LOWER(COALESCE(operator, '')) = LOWER(:{param_name})")
+                    operator_match = f"LOWER(COALESCE(operator, '')) = LOWER(:{param_name})"
                 else:
-                    additional_conditions.append(f"remove_diacritics(LOWER(COALESCE(operator, ''))) LIKE remove_diacritics(LOWER(:{param_name}))")
+                    operator_match = f"remove_diacritics(LOWER(COALESCE(operator, ''))) LIKE remove_diacritics(LOWER(:{param_name}))"
+                # Also match trips whose operator resolves to the same company under a
+                # different spelling, so "operator:SBB" finds one logged as CFF. The
+                # names are resolved to ids once here rather than per row, leaving an
+                # indexed integer lookup in the correlated subquery.
+                operator_ids = find_operator_ids(search_term, exact=is_exact)
+                if operator_ids:
+                    ids_param = f"{param_name}_operator_ids"
+                    search_params[ids_param] = operator_ids
+                    operator_match = (
+                        f"({operator_match} OR EXISTS (SELECT 1 FROM trip_operators tvs"
+                        f" WHERE tvs.trip_id = FilteredTrips.uid"
+                        f" AND tvs.operator_id = ANY(:{ids_param})))"
+                    )
+                additional_conditions.append(operator_match)
             elif column_name == "line_name":
                 if is_exact:
                     additional_conditions.append(f"LOWER(COALESCE(line_name, '')) = LOWER(:{param_name})")
@@ -7853,12 +7874,28 @@ def get_trips_api_internal(username, is_public=False):
 
             search_params[param_name] = search_pattern
 
+    # Push an exact trip-type filter down into the base CTE. The column-specific
+    # "type" search above is a diacritics-insensitive LIKE, which no index can
+    # serve, so the CTE would materialise every one of the user's trips and only
+    # then drop the other types. When the value names a real trip type exactly
+    # (a partial "type:fer" still falls back to the LIKE) and isn't negated, we
+    # also constrain base by trip_type = :base_type, letting the
+    # (user_id, trip_type) index fetch just those rows. The LIKE stays on the
+    # outer query, so results are identical — this only narrows the scan.
+    base_type = None
+    type_search = column_searches.get(0)
+    if type_search and type_search["value"] and not type_search["negate"]:
+        candidate = type_search["value"].strip().lower()
+        if candidate in {t.value for t in TripTypes}:
+            base_type = candidate
+            search_params["base_type"] = base_type
+
     # Global free-text search across every field. Appended to the outer query only
     # when there is something to match, so the common empty-search case lets Postgres
     # elide the airliners join (count query) and avoids the tickets join entirely.
     # Columns are referenced at the FilteredTrips level; ticket name and tags are
     # correlated EXISTS subqueries (the CTE no longer joins tickets).
-    def _global_search_predicate(param):
+    def _global_search_predicate(param, operator_ids=None):
         like = (
             "remove_diacritics(LOWER({col})) LIKE remove_diacritics(LOWER(:" + param + "))"
         )
@@ -7888,24 +7925,42 @@ def get_trips_api_internal(username, is_public=False):
             "EXISTS (SELECT 1 FROM tags_associations fta JOIN tags ft ON fta.tag_id = ft.uid"
             f" WHERE fta.trip_id = FilteredTrips.uid AND remove_diacritics(LOWER(ft.name)) LIKE remove_diacritics(LOWER(:{param})))"
         )
+        # Trips whose operator matches under another spelling — searching "SBB" finds
+        # one logged as CFF. Only added when the term actually names a known operator.
+        if operator_ids:
+            terms.append(
+                "EXISTS (SELECT 1 FROM trip_operators tvg"
+                f" WHERE tvg.trip_id = FilteredTrips.uid AND tvg.operator_id = ANY(:{param}_operator_ids))"
+            )
         return "(" + " OR ".join(terms) + ")"
 
     if search_value:
         search_params["search"] = f"%{search_value}%"
-        additional_conditions.append(_global_search_predicate("search"))
+        global_operator_ids = find_operator_ids(search_value)
+        if global_operator_ids:
+            search_params["search_operator_ids"] = global_operator_ids
+        additional_conditions.append(
+            _global_search_predicate("search", global_operator_ids)
+        )
 
     # Negative global terms ("!term"): keep only trips where NO field matches the
     # term. COALESCE(..., FALSE) so a trip with all-NULL fields still passes the NOT.
     for idx, neg_term in enumerate(global_not_terms):
         neg_param = f"search_not_{idx}"
         search_params[neg_param] = f"%{neg_term}%"
+        # Exclude by alias too, so "!SBB" also drops trips logged as CFF — otherwise
+        # a negative filter would leave behind the spellings it looks equivalent to.
+        neg_operator_ids = find_operator_ids(neg_term)
+        if neg_operator_ids:
+            search_params[f"{neg_param}_operator_ids"] = neg_operator_ids
         additional_conditions.append(
-            f"NOT COALESCE({_global_search_predicate(neg_param)}, FALSE)"
+            f"NOT COALESCE({_global_search_predicate(neg_param, neg_operator_ids)}, FALSE)"
         )
 
     # Build the queries
-    base_count_query = get_dynamic_user_trips_query() + "SELECT COUNT(*) FROM FilteredTrips"
-    base_data_query = get_dynamic_user_trips_query() + "SELECT * FROM FilteredTrips"
+    cte = get_dynamic_user_trips_query(base_type_filter=base_type is not None)
+    base_count_query = cte + "SELECT COUNT(*) FROM FilteredTrips"
+    base_data_query = cte + "SELECT * FROM FilteredTrips"
     
     # Add type filtering if needed
     if is_public and is_friend:
