@@ -6582,6 +6582,277 @@ def copyTrip(username):
     return ""
 
 
+# ---------------------------------------------------------------------------
+# patchTrip — partial edits.
+#
+# updateTrip/copyTrip rewrite every column from the posted form (update_trip.sql
+# has no COALESCE), so a payload that omits a field NULLs it. patchTrip instead
+# rebuilds the full form from the stored trip and overlays only the keys the
+# caller actually sent, making "absent" mean "leave alone". That also keeps an
+# older client safe when a field is added server-side: it never mentions the new
+# field, so the stored value survives.
+# ---------------------------------------------------------------------------
+
+# The date shapes processDates understands, and what each one needs to be given.
+# Any other value is silently read as "unknown" and would wipe the trip's dates.
+# unknownType is required rather than left to processDates' "future" default, which
+# would quietly turn a dateless past trip into a project.
+PATCH_PRECISIONS = {
+    "preciseDates": ("newTripStart", "newTripEnd"),
+    "onlyDate": ("onlyDate",),
+    "unknown": ("unknownType",),
+}
+
+# Date fields that only mean anything alongside an explicit `precision`.
+PATCH_DATE_SHAPE_FIELDS = {"newTripStart", "newTripEnd", "onlyDate", "unknownType"}
+
+# Everything patchTrip understands. Keys outside this set are dropped and listed
+# back in the response rather than reaching the update pipeline.
+PATCH_TRIP_FIELDS = PATCH_DATE_SHAPE_FIELDS | {
+    "precision",
+    "onlyDateDuration",
+    "type",
+    "origin_station",
+    "destination_station",
+    "operator",
+    "lineName",
+    "seat",
+    "material_type",
+    "material_type_advanced",
+    "reg",
+    "notes",
+    "waypoints",
+    "visibility",
+    "price",
+    "currency",
+    "purchasing_date",
+    "ticket_id",
+    "departure_delay",
+    "arrival_delay",
+    "powerType",
+    "co2Override",
+    "route_source",
+    "trip_length",
+    "estimated_trip_duration",
+    # Route geometry. `path` owns the 3D flight track, so altitude/timestamps are
+    # replaced (or cleared) with it — a track that no longer lines up with the
+    # geometry is corrupt, not worth preserving.
+    "path",
+    "altitude",
+    "timestamps",
+    "details",
+}
+
+# JSON clients send these as arrays/objects; the pipeline expects the serialised
+# form the HTML form posts.
+PATCH_JSON_FIELDS = ("path", "altitude", "timestamps", "waypoints", "details")
+
+
+def _blank_if_none(value):
+    """Form fields use "" for "unset", which sanitize_param turns back into NULL.
+    A stored 0 is kept as 0 — unlike None, it is a real value."""
+    return "" if value is None else value
+
+
+def _date_form_fields_from_trip(trip):
+    """Map a stored trip's datetimes back onto the edit form's precision model, so
+    that running processDates over them reproduces what is already stored."""
+    duration = _blank_if_none(trip["manual_trip_duration"])
+    start, end = trip["start_datetime"], trip["end_datetime"]
+
+    # 1 = future/project, -1 = past, both meaning "no date known" (adapt_pg_trip_row).
+    if start in (1, -1):
+        return {
+            "precision": "unknown",
+            "unknownType": "future" if start == 1 else "past",
+            "onlyDateDuration": duration,
+        }
+
+    start_dt = datetime.strptime(start, "%Y-%m-%d %H:%M:%S")
+    # The seconds field is a marker, not a time: 01 means date-only.
+    if start_dt.second == 1:
+        return {
+            "precision": "onlyDate",
+            "onlyDate": start_dt.strftime("%Y-%m-%d"),
+            "onlyDateDuration": duration,
+        }
+
+    end_dt = (
+        datetime.strptime(end, "%Y-%m-%d %H:%M:%S") if end not in (1, -1) else start_dt
+    )
+    return {
+        "precision": "preciseDates",
+        "newTripStart": start_dt.strftime("%Y-%m-%dT%H:%M"),
+        "newTripEnd": end_dt.strftime("%Y-%m-%dT%H:%M"),
+    }
+
+
+def build_form_data_from_trip(trip_id, trip=None):
+    """Reconstruct the complete edit-form payload for a stored trip.
+
+    Posting this back unchanged is a no-op, which is what makes it a safe base to
+    overlay a partial patch onto. `path`/`altitude`/`timestamps`/`details` are
+    deliberately absent: without them update_trip reuses the stored geometry and
+    leaves the 3D track alone.
+    """
+    trip = trip if trip is not None else get_trip_pg(trip_id)
+    if trip is None:
+        abort(404)
+
+    price = trip["price"]
+    if price in (None, ""):
+        price = ""
+    else:
+        price = str(int(price) if float(price) % 1 == 0 else price)
+
+    form = {
+        "type": trip["type"],
+        "origin_station": _blank_if_none(trip["origin_station"]),
+        "destination_station": _blank_if_none(trip["destination_station"]),
+        "operator": _blank_if_none(trip["operator"]),
+        "lineName": _blank_if_none(trip["line_name"]),
+        "seat": _blank_if_none(trip["seat"]),
+        "material_type": _blank_if_none(trip["material_type"]),
+        "material_type_advanced": _blank_if_none(trip.get("material_type_advanced")),
+        "reg": _blank_if_none(trip["reg"]),
+        "notes": _blank_if_none(trip["notes"]),
+        "waypoints": _blank_if_none(trip["waypoints"]),
+        "visibility": _blank_if_none(trip["visibility"]),
+        "price": price,
+        "currency": _blank_if_none(trip["currency"]),
+        "purchasing_date": _blank_if_none(trip["purchasing_date"]),
+        "ticket_id": _blank_if_none(trip["ticket_id"]),
+        # Seconds, as the edit form posts them.
+        "departure_delay": _blank_if_none(trip.get("departure_delay")),
+        "arrival_delay": _blank_if_none(trip.get("arrival_delay")),
+        "powerType": _blank_if_none(trip.get("power_type")),
+        # A string so a stored 0 survives: update_trip_values_from_form_data tests
+        # co2Override for truthiness, and 0 would read as "not set".
+        "co2Override": (
+            "" if trip.get("co2_override") is None else str(trip["co2_override"])
+        ),
+        "route_source": trip.get("route_source") or "router",
+    }
+    form.update(_date_form_fields_from_trip(trip))
+    return form
+
+
+def _validate_trip_patch(patched):
+    """Reject date payloads processDates would misread. Everything else is safe to
+    merge — an absent key simply keeps the stored value. Returns an error message,
+    or None when the patch is sound."""
+    precision = patched.get("precision")
+    if precision is not None and precision not in PATCH_PRECISIONS:
+        return (
+            f"Unknown precision '{precision}'; expected one of "
+            f"{', '.join(sorted(PATCH_PRECISIONS))}"
+        )
+
+    shape_fields = PATCH_DATE_SHAPE_FIELDS & set(patched)
+    if shape_fields and precision is None:
+        return (
+            f"{', '.join(sorted(shape_fields))} also require 'precision'; without it"
+            " the trip keeps its current date shape and they would be ignored"
+        )
+    return None
+
+
+@app.route("/u/<username>/patchTrip", methods=["GET", "POST"])
+@login_required
+def patchTrip(username):
+    """Partial trip edit: only the fields present in the payload change, every
+    other column keeps its stored value.
+
+    Accepts a form post or a JSON body. An explicit null (or "") clears a field;
+    omitting it leaves it untouched. Responds with the fields that were applied
+    and any key that was not recognised.
+    """
+    if request.method != "POST":
+        return ""
+
+    payload = request.get_json(silent=True)
+    if payload is None:
+        payload = dict(request.form)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Expected an object of trip fields"}), 400
+
+    trip_id = payload.pop("trip_id", None)
+    if trip_id in (None, ""):
+        return jsonify({"error": "trip_id is required"}), 400
+
+    check_current_user_owns_trip(trip_id)
+
+    ignored = sorted(set(payload) - PATCH_TRIP_FIELDS)
+    # A form post can only ever say "" for "clear this"; normalise JSON's null to the
+    # same thing so both spellings take the identical path through the pipeline.
+    patched = {
+        k: ("" if v is None else v)
+        for k, v in payload.items()
+        if k in PATCH_TRIP_FIELDS
+    }
+    for key in PATCH_JSON_FIELDS:
+        if isinstance(patched.get(key), (list, dict)):
+            patched[key] = json.dumps(patched[key])
+    # An empty route is not a clear, it is a broken payload — and merely mentioning
+    # "path" makes update_trip replace the geometry and drop the 3D track.
+    if patched.get("path") == "":
+        del patched["path"]
+
+    error = _validate_trip_patch(patched)
+    if error:
+        return jsonify({"error": error}), 400
+
+    stored = get_trip_pg(trip_id)
+    if stored is None:
+        abort(404)
+
+    formData = build_form_data_from_trip(trip_id, stored)
+    formData.update(patched)
+
+    # Distance and duration are only honoured as a pair, so fill in the stored
+    # counterpart — otherwise patching just one of them is silently dropped.
+    if "trip_length" in patched or "estimated_trip_duration" in patched:
+        formData.setdefault("trip_length", _blank_if_none(stored["trip_length"]))
+        formData.setdefault(
+            "estimated_trip_duration",
+            _blank_if_none(stored["estimated_trip_duration"]),
+        )
+
+    missing = [f for f in PATCH_PRECISIONS[formData["precision"]] if not formData.get(f)]
+    if missing:
+        return jsonify(
+            {
+                "error": f"precision '{formData['precision']}' also requires "
+                f"{', '.join(missing)}"
+            }
+        ), 400
+
+    # The trip type sits outside the update_trip pipeline (which reuses the stored
+    # one) and selects the operator pool, so apply it first and let the rest of the
+    # patch run against the new type.
+    if "type" in patched and patched["type"] != stored["type"]:
+        try:
+            current_type = TripTypes.from_str(stored["type"])
+            new_type = TripTypes.from_str(patched["type"])
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        if not TripTypes.can_transform(current_type, new_type):
+            return jsonify(
+                {
+                    "error": f"Cannot change trip type from '{stored['type']}' "
+                    f"to '{patched['type']}'."
+                }
+            ), 400
+        update_trip_type(trip_id, new_type)
+
+    new_trip = update_trip_values_from_form_data(trip_id, formData)
+    update_trip(trip_id, new_trip, formData)
+
+    return jsonify(
+        {"trip_id": int(trip_id), "patched": sorted(patched), "ignored": ignored}
+    )
+
+
 def check_current_user_owns_trip(trip_id):
     """
     Ensures that a given trip belongs to the currently logged in user
