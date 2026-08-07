@@ -3,28 +3,129 @@
 
 {% include nav %}
 
+<style>
+    /* DataTables 2 lays each header out as a flex row with `justify-content:
+       space-between` and the title at `flex-grow: 1`, so the sort arrows are pushed to
+       the far right edge of the column. On a narrow header they land right after the
+       label, on a wide one they drift halfway across the table and read as belonging to
+       the next column. Stop the title growing and every arrow sits the same 4px after
+       its own label. */
+    #shipTable thead th div.dt-column-header { justify-content: flex-start; }
+    #shipTable thead th span.dt-column-title { flex-grow: 0; }
+
+    /* .ship-thumb (the hover photo preview) is shared with the trip forms: style2.css. */
+
+    /* The photo cell in the Periods table: thumbnail on the left, its attribution beside
+       it, so the credit reads as belonging to the picture rather than floating under the
+       row. Capped, or a long CC author name pushes the actions off the table. */
+    #periodsTable .period-photo { display: flex; align-items: center; gap: .5rem; }
+    #periodsTable .period-credit { max-width: 22rem; line-height: 1.25; }
+    #periodsTable .period-credit a { white-space: nowrap; }
+    /* The credit editor opens as a row of the table; set apart so it reads as attached to
+       the row above rather than as another period. */
+    #periodsTable tr.credit-editor > td { background: rgba(0, 0, 0, .03); }
+</style>
+
 <div class="container">
     <h1 class="mt-3">Ships</h1>
-    <button type="button" class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#shipModal" onclick="clearForm()">Add Ship</button>
-    <table id="shipTable" class="mt-3">
+    <p class="text-muted">
+        One row per <strong>hull</strong>, identified by its IMO. A hull carries a sequence of
+        registrations — an MMSI, a name and a flag, from a date — and a trip shows the one that
+        was in force on its own date. IMO 8601915 sailed as Amorella 🇫🇮 from 1988 and as
+        Mega&nbsp;Victoria 🇮🇹 from 2022; a crossing in 2008 reads Amorella.
+        <br>The columns below show each hull as it is <em>now</em>; use <em>Periods</em> to see
+        and edit its history.
+    </p>
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#shipModal" onclick="clearForm()">Add Ship</button>
+        <!-- Its own page: the backfill is a worklist to sit down with — a slow scan, then
+             decisions to make one at a time — which is more than an overlay on top of the
+             register can hold. -->
+        <a href="/admin/ships/backfill" class="btn btn-outline-secondary">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> Wikidata backfill
+        </a>
+    </div>
+    <table id="shipTable">
         <thead>
+            {# Hull facts only. A name, an MMSI and a flag all belong to a registration,
+               not to the hull, so they live in the Periods modal — a hull that has been
+               renamed has no single one of any of them. #}
             <tr>
-                <th scope="col">Vessel Name</th>
-                <th scope="col">Country Code</th>
-                <th scope="col">Image</th>
+                <th scope="col">IMO</th>
+                <th scope="col">Trainlog ID</th>
+                <th scope="col">Currently</th>
+                <th scope="col">Operator</th>
+                <th scope="col">Trips</th>
+                <th scope="col">Periods</th>
                 <th scope="col" data-orderable="false">Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for ship in shipList %}
                 <tr>
-                    <td>{{ ship.vessel_name }}</td>
-                    <td>{{ ship.country_code }}</td>
-                    <td><img src="/static/images/ship_pictures/{{ ship.local_image_path }}" width="200px"></td>
+                    {# The numbers link out to vesselfinder — the same source the cached
+                       photos are credited to, so a doubtful row can be checked against
+                       the place the photo came from. #}
                     <td>
-                        <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#shipModal"
-                            onclick="editShip('{{ ship.vessel_name }}', '{{ ship.country_code }}', '{{ ship.local_image_path }}')"><i class="fa-regular fa-pen-to-square"></i></button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteShip('{{ ship.vessel_name }}')"><i class="fa-regular fa-trash-can"></i></button>
+                        {% if ship.imo %}
+                            <a href="https://www.vesselfinder.com/vessels/details/{{ ship.imo }}"
+                               target="_blank" rel="noopener noreferrer">{{ ship.imo }}</a>
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-muted small">{{ ship.trainlog_id }}</td>
+                    {# The most recent registration, shown so a row is recognisable —
+                       flag, name and photo together, the way the ship is now. None of it
+                       is a property of the hull; it all lives under Periods. #}
+                    <td>
+                        {% if ship.local_image_path %}
+                            <span class="ship-thumb me-2">
+                                <img src="/static/images/ship_pictures/{{ ship.local_image_path }}"
+                                     width="64" height="40" loading="lazy" decoding="async" alt="">
+                                <img class="ship-thumb-full"
+                                     src="/static/images/ship_pictures/{{ ship.local_image_path }}"
+                                     loading="lazy" decoding="async" alt="">
+                            </span>
+                        {% endif %}
+                        {{ ship.flag }}
+                        {{ ship.name or '' }}
+                        {% if ship.former_names %}
+                            {# Former names, so a hull is recognisable — and findable —
+                               by a name it no longer carries. DataTables searches the
+                               row's text, so this is what makes "Amorella" match a ship
+                               now sailing as Mega Victoria. #}
+                            <div class="text-muted small">ex {{ ship.former_names | join(', ') }}</div>
+                        {% endif %}
+                    </td>
+                    {# Decoration: whoever runs her on most of the logged trips. Often the
+                       clearest identification of a small ferry, whose name is generic and
+                       whose hull has no IMO. Resolved through operator_aliases, so a
+                       spelling variant still finds the logo. #}
+                    <td>
+                        {% if ship.operator_logo %}
+                            <img src="/static/{{ ship.operator_logo }}" alt="{{ ship.operator_name }}"
+                                 height="20" loading="lazy" decoding="async"
+                                 style="max-width:90px;object-fit:contain;vertical-align:middle;">
+                        {% elif ship.operator %}
+                            <span class="text-muted small">{{ ship.operator }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ ship.trips }}</td>
+                    <td>
+                        {# The count is the sort key; the button opens the history. A hull with
+                           more than one period has been renamed or re-flagged. #}
+                        <button class="btn btn-sm periods-btn {% if ship.registrations > 1 %}btn-info{% else %}btn-outline-secondary{% endif %}"
+                                data-vessel-id="{{ ship.uid }}"
+                                data-label="{{ ship.name or ship.imo or ship.trainlog_id }}">
+                            <i class="fa-regular fa-clock"></i> {{ ship.registrations }}
+                        </button>
+                    </td>
+                    <td>
+                        <button class="btn btn-warning btn-sm edit-ship-btn" data-bs-toggle="modal" data-bs-target="#shipModal"
+                            data-vessel-id="{{ ship.uid }}" data-imo="{{ ship.imo or '' }}"
+                            data-name="{{ ship.name or '' }}" data-trainlog-id="{{ ship.trainlog_id }}"><i class="fa-regular fa-pen-to-square"></i></button>
+                        <button class="btn btn-danger btn-sm delete-ship-btn" data-vessel-id="{{ ship.uid }}"><i class="fa-regular fa-trash-can"></i></button>
                     </td>
                 </tr>
             {% endfor %}
@@ -37,26 +138,171 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="shipModalLabel">Ship Form</h5>
+                <h5 class="modal-title" id="shipModalLabel">Hull</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <form id="shipForm" enctype="multipart/form-data">
-                    <input type="hidden" id="original_vessel_name" name="original_vessel_name">
+                <form id="shipForm">
+                    <input type="hidden" id="vessel_id" name="vessel_id">
                     <div class="form-group">
-                        <label for="vessel_name">Vessel Name</label>
-                        <input type="text" class="form-control" id="vessel_name" name="vessel_name" required>
+                        <label for="imo">IMO</label>
+                        <input type="text" class="form-control" id="imo" name="imo"
+                               inputmode="numeric" pattern="[0-9]{7}" placeholder="7 digits">
+                        <small class="form-text text-muted">
+                            The hull's permanent number. Leave it empty for a ship that has
+                            none — it keeps its Trainlog ID <span id="shipTrainlogId" class="fw-bold"></span> instead.
+                        </small>
                     </div>
+                    {# The name is a registration's, not the hull's, but a hull with no IMO
+                       would otherwise open an empty form with nothing to identify it by.
+                       This edits the CURRENT period — which for almost every ship is the
+                       only one. Renames and flags are under Periods. #}
                     <div class="form-group">
-                        <label for="country_code">Country Code</label>
-                        <input type="text" class="form-control" id="country_code" name="country_code" required>
+                        <label for="name">Current name</label>
+                        <input type="text" class="form-control" id="name" name="name">
+                        <small class="form-text text-muted">
+                            The name it goes by now. Earlier names, flags and MMSIs are under Periods.
+                        </small>
                     </div>
-                    <div class="form-group">
-                        <label for="ship_picture">Picture</label>
-                        <input type="file" class="form-control" id="ship_picture" name="ship_picture">
-                    </div>
-                    <button type="submit" class="btn btn-primary">Save</button>
+                    <div id="shipFormError" class="text-danger mt-2" style="display: none;"></div>
+                    <button type="submit" class="btn btn-primary mt-2">Save</button>
                 </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Registrations (periods) of one hull -->
+<div class="modal fade" id="periodsModal" tabindex="-1" aria-hidden="true">
+    {# modal-xl: the history table carries seven columns, one of them a photo with its
+       attribution under it, and the form below is two rows of fields. At lg it all
+       wrapped into itself. #}
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Periods — <span id="periodsShipName"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-2">
+                    Newest first. A period runs until the next one starts; an empty date means
+                    “from the beginning”. Trips are counted by the period their date falls in.
+                </p>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle" id="periodsTable">
+                        <thead>
+                            <tr>
+                                <th>From</th><th>Name</th><th>Flag</th><th>MMSI</th>
+                                <th class="text-end">Trips</th><th>Photo &amp; credit</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="periodsBody"></tbody>
+                    </table>
+                </div>
+                <input type="file" id="periodRowUpload" accept="image/*" style="display:none;">
+
+                <div class="card mt-3">
+                    <div class="card-header py-2 fw-bold" id="periodFormTitle">Add a period</div>
+                    <div class="card-body">
+                        <form id="periodForm" enctype="multipart/form-data">
+                            <input type="hidden" id="period_vessel_id" name="vessel_id">
+                            <input type="hidden" id="period_registration_id" name="registration_id">
+                            <div class="row g-3">
+                                <div class="col-md-3">
+                                    <label for="period_effective_date" class="form-label">From</label>
+                                    <input type="date" class="form-control" id="period_effective_date" name="effective_date">
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="period_name" class="form-label">Name</label>
+                                    <input type="text" class="form-control" id="period_name" name="name">
+                                </div>
+                                <div class="col-md-2">
+                                    <label for="period_mmsi" class="form-label">MMSI</label>
+                                    <input type="text" class="form-control" id="period_mmsi" name="mmsi"
+                                           inputmode="numeric" pattern="[0-9]{9}" placeholder="9 digits">
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="period_country" class="form-label">Flag</label>
+                                    {# selectpicker for the live search: 250 countries is too many
+                                       to scroll, and the same widget the ticket and trip forms use.
+                                       No empty <option> of our own: title= makes bootstrap-select
+                                       insert its own placeholder option at index 0, and a second
+                                       blank one only shows up as an unlabelled first row in the
+                                       list. Clearing selects the plugin's. #}
+                                    {# container="body": the menu lives in a modal-dialog-scrollable,
+                                       whose body is an overflow container — drawn in place, the
+                                       menu is clipped by it, and since the field sits near the
+                                       bottom of the screen it opens upwards and loses its search
+                                       box under the modal header. Appended to <body> it is clipped
+                                       by nothing; bootstrap-select positions it against the button
+                                       and lifts its z-index above the modal. #}
+                                    <select class="form-control selectpicker" id="period_country" name="country_code"
+                                            data-live-search="true" data-size="10" title="—"
+                                            data-container="body">
+                                        {% for code, emoji in country_list.items() %}
+                                            <option value="{{ code }}" data-code="{{ code }}">{{ emoji }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    {# Named and initialised here, while the document is still
+                                       parsing, and NOT in $(document).ready. bootstrap-select
+                                       auto-initialises every .selectpicker from its own
+                                       DOMContentLoaded listener, and jQuery's ready callbacks
+                                       run after that (Deferred.then defers to a timeout), so an
+                                       updateCountryNames() at ready rewrites the <option> text
+                                       long after the menu has been built from it — which is why
+                                       the list showed bare flags with no country names. Doing it
+                                       here means the widget is built from the finished options
+                                       and the auto-init is a no-op. #}
+                                    <script>
+                                        updateCountryNames(document.getElementById('period_country'), true);
+                                        $('#period_country').selectpicker();
+                                    </script>
+                                </div>
+                            </div>
+
+                            {# Fenced off from the fields above, because these three describe
+                               the file and not the ship — and because for anything but your
+                               own photograph the credit is the condition of showing it at
+                               all: a CC BY-SA picture published without its author and
+                               licence is a breach. #}
+                            <fieldset class="border rounded p-2 mt-3">
+                                <legend class="float-none w-auto px-2 fs-6 text-muted">Photo</legend>
+                                <div class="row g-3">
+                                    <div class="col-md-4">
+                                        <label for="period_picture" class="form-label">File</label>
+                                        <input type="file" class="form-control" id="period_picture"
+                                               name="ship_picture" accept="image/*">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="period_photo_author" class="form-label">Author</label>
+                                        <input type="text" class="form-control" id="period_photo_author"
+                                               name="photo_author" placeholder="who took it">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="period_photo_license" class="form-label">Licence</label>
+                                        <input type="text" class="form-control" id="period_photo_license"
+                                               name="photo_license" placeholder="e.g. CC BY-SA 4.0">
+                                    </div>
+                                    <div class="col-12">
+                                        <small class="text-muted">
+                                            Author and licence describe the file chosen here; an empty
+                                            author means the photo is credited to nobody. To correct the
+                                            credit on a photo already on file, use <em>edit</em> beside
+                                            it in the table.
+                                        </small>
+                                    </div>
+                                </div>
+                            </fieldset>
+
+                            <div id="periodFormError" class="text-danger mt-2" style="display:none;"></div>
+                            <div class="mt-3">
+                                <button type="submit" class="btn btn-primary" id="periodSubmit">Add period</button>
+                                <button type="button" class="btn btn-link" onclick="clearPeriodForm()">Clear</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -67,6 +313,9 @@
     $(document).ready(function() {
         $('#shipTable').DataTable({
             responsive: true,
+            // Busiest hulls first: those are the ones whose missing name or number is
+            // actually showing up on somebody's trips. (Column 4 is Trips.)
+            order: [[4, 'desc']],
             language: {
                 info: "{{dtInfo}}",
                 paginate: {
@@ -86,9 +335,41 @@
             },
         });
 
-        $('#shipForm').on('submit', function(e) {
+        // The country picker is named and built beside its own <select>, before
+        // DOMContentLoaded — see the comment there.
+    });
+
+    /* Bound by delegation and outside $(document).ready on purpose. These were inside
+       it, after a call that could throw — and when it did (a placeholder option with no
+       country, see updateCountryNames), the handlers were never bound and the browser
+       submitted the form natively as a GET, silently dropping the upload. */
+    $(document).on('submit', '#periodForm', function(e) {
+            e.preventDefault();
+            $('#periodFormError').hide();
+            $.ajax({
+                type: 'POST',
+                url: '/admin/ships/registrations',
+                data: new FormData(this),
+                processData: false,
+                contentType: false,
+                success: function() {
+                    periodsChanged = true;
+                    clearPeriodForm();
+                    loadPeriods();
+                },
+                // A malformed MMSI, or one belonging to another hull, comes back as a
+                // message rather than a reload — the admin has to change something.
+                error: function(xhr) {
+                    var message = (xhr.responseJSON && xhr.responseJSON.error) || 'Could not save';
+                    $('#periodFormError').text(message).show();
+                }
+            });
+        });
+
+    $(document).on('submit', '#shipForm', function(e) {
             e.preventDefault();
             const formData = new FormData(this);
+            $('#shipFormError').hide();
 
             $.ajax({
                 type: 'POST',
@@ -99,30 +380,337 @@
                 success: function(response) {
                     location.reload();
                 },
-                error: function(error) {
-                    console.log('Error:', error);
+                // A duplicate IMO/MMSI or a malformed one comes back as a message
+                // rather than a reload — the admin has to change something first.
+                error: function(xhr) {
+                    var message = (xhr.responseJSON && xhr.responseJSON.error) || 'Could not save';
+                    $('#shipFormError').text(message).show();
                 }
             });
+    });
+
+
+    /* ── Periods (the registrations of one hull) ──────────────────────────────
+       A hull is shown in the table as it is now; this is where its history lives.
+       Everything is scoped to one vessel_id, so the modal is loaded fresh each time
+       rather than kept in sync with the table underneath. */
+    var periodsVesselId = null;
+
+    /* Bound by delegation rather than written into an onclick attribute. A ship's name
+       can contain quotes and apostrophes ("Bras d'Or"), and interpolating it into markup
+       broke the attribute outright — `onclick="openPeriods(89, "Ladejarl")"` ends at the
+       second quote. Data attributes are escaped by Jinja and read back as strings. */
+    $(document).on('click', '.periods-btn', function() {
+        openPeriods($(this).data('vessel-id'), $(this).data('label'));
+    });
+
+    function openPeriods(vesselId, label) {
+        periodsVesselId = vesselId;
+        $('#periodsShipName').text(label || ('#' + vesselId));
+        $('#period_vessel_id').val(vesselId);
+        clearPeriodForm();
+        loadPeriods();
+        new bootstrap.Modal(document.getElementById('periodsModal')).show();
+    }
+
+    // uid -> row, so the edit button carries an integer and never a serialised name.
+    var periodsById = {};
+
+    function loadPeriods(then) {
+        $('#periodsBody').html('<tr><td colspan="7" class="text-muted">'
+            + '<i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr>');
+        $.getJSON('/admin/ships/' + periodsVesselId + '/registrations')
+        // Say so when the lookup fails, rather than leaving an empty table that looks
+        // like a ship with no history. A 404 here means the server is running without
+        // the registrations routes and needs restarting.
+        .fail(function(xhr) {
+            $('#periodsBody').html('<tr><td colspan="7" class="text-danger">'
+                + 'Could not load periods (HTTP ' + xhr.status + ')'
+                + (xhr.status === 404 ? ' — the server has no /registrations route; restart it.' : '')
+                + '</td></tr>');
+        })
+        .done(function(rows) {
+            periodsById = {};
+            rows.forEach(function(r) { periodsById[r.uid] = r; });
+            var esc = function(v) { return $('<div>').text(v == null ? '' : v).html(); };
+            var body = rows.map(function(r) {
+                var flag = '';
+                if (r.country) {
+                    // regionNames.of() throws on anything that is not a region code.
+                    var name;
+                    try { name = regionNames.of(r.country); } catch (e) { name = r.country; }
+                    flag = getFlagEmoji(r.country) + '\u00a0' + esc(name);
+                }
+                /* Picture and credit as one block: the attribution belongs beside the
+                   thing it credits, and putting it in its own column would leave a wide
+                   empty one for the many periods that have no photo at all. */
+                var photo = r.image
+                    ? '<div class="period-photo">'
+                      + '<span class="ship-thumb">'
+                      + '<img src="' + esc(r.image) + '" width="72" height="44" loading="lazy" alt="">'
+                      + '<img class="ship-thumb-full" src="' + esc(r.image) + '" loading="lazy" alt="">'
+                      + '</span>'
+                      // What is printed under this picture wherever it is shown, and a way
+                      // in to correct it. A Commons file with no author here is shown
+                      // without the credit its licence requires, which is the case worth
+                      // being able to see at a glance.
+                      + '<div class="period-credit small">' + creditLine(r)
+                      + ' <a href="#" class="credit-edit-btn" data-uid="' + r.uid + '"'
+                      + ' title="Edit source, author and licence">'
+                      + '<i class="fa-regular fa-pen-to-square"></i> edit</a></div>'
+                      + '</div>'
+                    : '<span class="text-muted small">no photo</span>';
+                return '<tr>'
+                     + '<td class="text-nowrap">'
+                     + (r.effective_date ? esc(r.effective_date) : '<em class="text-muted">from the start</em>')
+                     + (r.is_current ? ' <span class="badge bg-success">current</span>' : '') + '</td>'
+                     + '<td>' + esc(r.name || '') + '</td>'
+                     + '<td class="text-nowrap">' + flag + '</td>'
+                     + '<td>' + esc(r.mmsi || '') + '</td>'
+                     + '<td class="text-end">' + r.trips + '</td>'
+                     + '<td>' + photo + '</td>'
+                     + '<td class="text-end text-nowrap">'
+                     // Grouped and kept on one line: three or four small icon buttons
+                     // wrapping mid-column is what made this row look broken.
+                     + '<div class="btn-group btn-group-sm" role="group">'
+                     // Upload a picture you have, or go and look one up. Both act on
+                     // this period alone, so a photo of the ship under its former name
+                     // cannot land on the current one.
+                     + '<button class="btn btn-outline-secondary period-upload-btn" data-uid="' + r.uid + '"'
+                     + ' title="Upload a photo for this period">'
+                     + '<i class="fa-solid fa-upload"></i></button>'
+                     + (r.image ? '' :
+                        '<button class="btn btn-outline-secondary period-fetch-btn" data-uid="' + r.uid + '"'
+                        + ' title="Look a photo up online">'
+                        + '<i class="fa-solid fa-camera"></i></button>')
+                     + '<button class="btn btn-warning period-edit-btn" data-uid="' + r.uid + '"'
+                     + ' title="Edit this period"><i class="fa-regular fa-pen-to-square"></i></button>'
+                     + '<button class="btn btn-danger period-delete-btn" data-uid="' + r.uid + '"'
+                     + ' title="Delete this period"><i class="fa-regular fa-trash-can"></i></button>'
+                     + '</div></td></tr>';
+            }).join('');
+            $('#periodsBody').html(body || '<tr><td colspan="7" class="text-muted">No periods recorded yet.</td></tr>');
+            if (then) { then(); }
+        });
+    }
+
+    $(document).on('click', '.period-edit-btn', function() { editPeriod(periodsById[$(this).data('uid')]); });
+    $(document).on('click', '.period-delete-btn', function() { deletePeriod($(this).data('uid')); });
+
+    /* ── A photo's provenance ─────────────────────────────────────────────────
+       Where the picture came from and under what licence (migration 0057). It is what
+       gets printed under the photo on the trip pages, so it is shown here rather than
+       being invisible in the database: a Commons file whose author is missing is being
+       published in breach of its licence, and only this line says so. */
+    var SOURCE_LABELS = {
+        vesselfinder: '©Vesselfinder.com',
+        wikimedia: 'Wikimedia Commons',
+        upload: 'uploaded here'
+    };
+
+    function creditLine(r) {
+        var esc = function(v) { return $('<div>').text(v == null ? '' : v).html(); };
+        var parts = [];
+        if (r.author) { parts.push(esc(r.author)); }
+        if (r.license) { parts.push(esc(r.license)); }
+        var label = SOURCE_LABELS[r.source] || (r.source ? esc(r.source) : null);
+        if (!label && !parts.length) {
+            // No source at all: nothing knows how to credit it. Worth flagging, since
+            // every photo arrived from somewhere.
+            return '<span class="text-danger">no source recorded</span>';
+        }
+        // A licence with nobody to credit is the case that breaks: say so instead of
+        // printing half an attribution.
+        if (r.source === 'wikimedia' && !r.author) {
+            parts.unshift('<span class="text-danger">author missing</span>');
+        }
+        return '<span class="text-muted">' + [label].concat(parts).filter(Boolean).join(' · ')
+             + '</span>';
+    }
+
+    /* Edited in a row of its own under the period rather than in a second modal: the
+       periods table is already inside one, and stacking two is how a dialog ends up
+       unclosable. */
+    $(document).on('click', '.credit-edit-btn', function(e) {
+        e.preventDefault();
+        var r = periodsById[$(this).data('uid')];
+        var $row = $(this).closest('tr');
+        if ($row.next().hasClass('credit-editor')) { $row.next().remove(); return; }
+        $('.credit-editor').remove();
+        var esc = function(v) { return $('<div>').text(v == null ? '' : v).html(); };
+        var option = function(value, label) {
+            return '<option value="' + value + '"' + (r.source === value ? ' selected' : '')
+                 + '>' + label + '</option>';
+        };
+        $row.after('<tr class="credit-editor"><td colspan="7">'
+            + '<form class="row g-2 align-items-end credit-form" data-picture="' + r.picture_id + '">'
+            + '<div class="col-md-3"><label class="form-label small mb-0">Source</label>'
+            + '<select class="form-control form-control-sm" name="source">'
+            + option('upload', 'Uploaded here') + option('wikimedia', 'Wikimedia Commons')
+            + option('vesselfinder', 'Vesselfinder (image search)')
+            + '</select></div>'
+            + '<div class="col-md-4"><label class="form-label small mb-0">Author</label>'
+            + '<input type="text" class="form-control form-control-sm" name="photo_author"'
+            + ' value="' + esc(r.author || '') + '" placeholder="who took it"></div>'
+            + '<div class="col-md-3"><label class="form-label small mb-0">Licence</label>'
+            + '<input type="text" class="form-control form-control-sm" name="photo_license"'
+            + ' value="' + esc(r.license || '') + '" placeholder="e.g. CC BY-SA 4.0"></div>'
+            + '<div class="col-md-2"><button type="submit" class="btn btn-primary btn-sm">Save</button>'
+            + ' <button type="button" class="btn btn-link btn-sm credit-cancel">Cancel</button></div>'
+            + (r.referrer_url
+               ? '<div class="col-12 small"><a href="' + esc(r.referrer_url) + '" target="_blank"'
+                 + ' rel="noopener noreferrer">the page it came from</a></div>'
+               : '')
+            + '</form></td></tr>');
+    });
+
+    $(document).on('click', '.credit-cancel', function() { $(this).closest('.credit-editor').remove(); });
+
+    $(document).on('submit', '.credit-form', function(e) {
+        e.preventDefault();
+        var $form = $(this);
+        var data = $form.serializeArray();
+        data.push({ name: 'picture_id', value: $form.data('picture') });
+        $('#periodFormError').hide();
+        $.post('/admin/ships/registrations/photo_credit', $.param(data))
+            .done(function() { periodsChanged = true; loadPeriods(); })
+            .fail(function(xhr) {
+                $('#periodFormError')
+                    .text((xhr.responseJSON && xhr.responseJSON.error) || 'Could not save').show();
+            });
+    });
+
+    /* No cached photo for this period: go and look for one. The lookup is the same
+       Google Images search /getVesselPhoto runs on a miss, but aimed at THIS period —
+       it searches by that period's name and MMSI, and files what it finds against it,
+       so a photo of the ship under its old name does not land on the new one. It is
+       behind a button because it is a paid external search and a deliberate act. */
+    /* Upload straight from the row: the button drives one hidden file input, which
+       remembers which period asked for it. */
+    $(document).on('click', '.period-upload-btn', function() {
+        $('#periodRowUpload').data('uid', $(this).data('uid')).val('').trigger('click');
+    });
+
+    $(document).on('change', '#periodRowUpload', function() {
+        if (!this.files.length) return;
+        var data = new FormData();
+        data.append('registration_id', $(this).data('uid'));
+        data.append('ship_picture', this.files[0]);
+        $('#periodFormError').hide();
+        var uid = $(this).data('uid');
+        $.ajax({
+            type: 'POST', url: '/admin/ships/registrations/upload_photo',
+            data: data, processData: false, contentType: false,
+            // Straight into the credit editor: a picture uploaded from the row came
+            // with no author or licence, and this is the moment the admin knows what
+            // they are. Leaving it as it stands says "mine, no credit needed".
+            success: function() {
+                periodsChanged = true;
+                loadPeriods(function() {
+                    $('.credit-edit-btn[data-uid="' + uid + '"]').trigger('click');
+                });
+            },
+            error: function(xhr) {
+                var message = (xhr.responseJSON && xhr.responseJSON.error) || 'Upload failed';
+                $('#periodFormError').text(message).show();
+            }
         });
     });
 
-    function editShip(vessel_name, country_code, local_image_path) {
-        $('#original_vessel_name').val(vessel_name);
-        $('#vessel_name').val(vessel_name);
-        $('#country_code').val(country_code);
+    $(document).on('click', '.period-fetch-btn', function() {
+        var $btn = $(this).prop('disabled', true);
+        $btn.html('<i class="fa-solid fa-spinner fa-spin"></i>');
+        $.post('/admin/ships/registrations/fetch_photo', { registration_id: $btn.data('uid') })
+            .done(function(res) {
+                if (res.image) { periodsChanged = true; loadPeriods(); }
+                else {
+                    $btn.prop('disabled', false).html('<i class="fa-solid fa-camera"></i>');
+                    $('#periodFormError').text(res.error || 'Nothing found').show();
+                }
+            })
+            .fail(function(xhr) {
+                $btn.prop('disabled', false).html('<i class="fa-solid fa-camera"></i>');
+                var message = (xhr.responseJSON && xhr.responseJSON.error) || 'Lookup failed';
+                $('#periodFormError').text(message).show();
+            });
+    });
+
+    function editPeriod(r) {
+        if (!r) return;
+        $('#period_registration_id').val(r.uid);
+        $('#period_effective_date').val(r.effective_date || '');
+        $('#period_name').val(r.name || '');
+        $('#period_mmsi').val(r.mmsi || '');
+        /* selectpicker('val'), never .val() + 'refresh'. bootstrap-select 1.14.0-beta3
+           rebuilds its option cache by APPENDING to it (buildData pushes onto
+           selectpicker.main.data instead of replacing it), so every refresh doubles the
+           list and leaves the previously selected copy still marked selected — which is
+           how editing a second period put two flags side by side in the button and a
+           second, unlabelled set of rows in the dropdown. 'val' sets the selection
+           through the widget and re-renders without touching the cache. */
+        $('#period_country').selectpicker('val', r.country || '');
+        $('#periodSubmit').text('Save period');
+        $('#periodFormTitle').text('Editing the period from '
+            + (r.effective_date || 'the start'));
+        $('#periodFormError').hide();
+        // The form is below a table that can be several rows long; without this an edit
+        // click looks as though it did nothing.
+        document.getElementById('periodForm').scrollIntoView({ block: 'nearest' });
     }
+
+    function clearPeriodForm() {
+        $('#periodForm')[0].reset();
+        // reset() restores the <select>'s value but not the widget drawn over it — and
+        // not the widget's own idea of what is selected. 'val' with an empty string
+        // deselects every option, so the DOM falls back to the placeholder at index 0.
+        // (Not 'refresh': see editPeriod.)
+        $('#period_country').selectpicker('val', '');
+        $('#period_vessel_id').val(periodsVesselId);
+        $('#period_registration_id').val('');
+        $('#periodSubmit').text('Add period');
+        $('#periodFormTitle').text('Add a period');
+        $('#periodFormError').hide();
+    }
+
+    function deletePeriod(registrationId) {
+        if (!confirm('Delete this period? Trips in its date range will fall back to the neighbouring one.')) return;
+        $.post('/admin/ships/registrations/delete', { registration_id: registrationId })
+            .done(function() { loadPeriods(); periodsChanged = true; })
+            .fail(function() { alert('Could not delete'); });
+    }
+
+    // The table behind the modal shows each hull's current identity and period count,
+    // both of which an edit here can change — so reload once, on close, rather than
+    // after every save.
+    var periodsChanged = false;
+    $(document).on('hidden.bs.modal', '#periodsModal', function() {
+        if (periodsChanged) location.reload();
+    });
+
+    $(document).on('click', '.edit-ship-btn', function() {
+        $('#vessel_id').val($(this).data('vessel-id'));
+        $('#imo').val($(this).data('imo') || '');
+        $('#name').val($(this).data('name') || '');
+        $('#shipTrainlogId').text($(this).data('trainlog-id') || '');
+        $('#shipFormError').hide();
+    });
+
+    $(document).on('click', '.delete-ship-btn', function() { deleteShip($(this).data('vessel-id')); });
 
     function clearForm() {
         $('#shipForm')[0].reset();
-        $('#original_vessel_name').val('');
+        $('#vessel_id').val('');
+        // A new hull has no Trainlog ID until it is saved — it is generated from the uid.
+        $('#shipTrainlogId').text('');
+        $('#shipFormError').hide();
     }
 
-    function deleteShip(vessel_name) {
+    function deleteShip(vessel_id) {
         if (confirm('Are you sure you want to delete this ship?')) {
             $.ajax({
                 type: 'POST',
                 url: '/admin/ships/delete',
-                data: { vessel_name: vessel_name },
+                data: { vessel_id: vessel_id },
                 success: function(response) {
                     location.reload();
                 },

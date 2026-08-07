@@ -86,7 +86,12 @@
 }
 
 .navbar {
-  z-index: 2000;
+  /* Bootstrap's fixed-chrome level. This has to stay under the modal layer
+     (backdrop 1050, modal 1055): at 2000 the navbar painted over the top of every
+     modal on the site — edit_copy's map modal carries an inline z-index:5000 to
+     work around exactly that. Still clears page content and Leaflet, whose panes
+     and controls top out at 1000. */
+  z-index: 1030;
   box-shadow: 0px 1px 5px grey;
 }
 .navbar-nav>li>.dropdown-menu { 
@@ -152,6 +157,7 @@
   margin: 2px;
   user-select: none;
   text-decoration: none;
+  white-space: nowrap;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
 }
 
@@ -212,8 +218,11 @@
   color:#c9c5c5
 }
 
+/* Hidden, not removed: `display:none` would drop the arrow's box and its
+   margin, pulling this row's content left out of line with the rows that do
+   have something to expand. */
 td.noHidden::before{
-  display: none !important;
+  visibility: hidden !important;
 }
 
 td.noHidden{
@@ -221,18 +230,18 @@ td.noHidden{
 }
 
 .trips{
-  margin-bottom: 70px;
+  /* No standing bottom reservation. The selection bar is fixed and only exists while
+     trips are checked, and showMultilink() appends .bottom-space to clear it exactly
+     then — so a permanent margin here reserved the same room a second time, and cost
+     ~70px of dead whitespace on every visit: enough to raise a scrollbar on a page
+     whose content otherwise fit, and to cost the auto-fit page length a row or two.
+     The clearance it used to contribute moved into .bottom-space below. */
   padding: 25px;
 }
 
 .trips select {
   color: black;
 }
-
-td.child table tr td{
-  max-width: max-content !important;
-}
-
 
 th {
   background-color: #207cca !important;
@@ -324,21 +333,25 @@ td .operatorList .operatorListName{
    display:none;
    z-index: 100;
    text-align:center;
- }
-
-.bottom-space{
-  height: 30px;
 }
 
- button.multiTrip{
+.bottom-space{
+  /* Appended to the body while the selection bar is shown, to clear it. Carries the
+     full clearance now (was 30px here plus a standing 70px margin on .trips). */
+  height: 100px;
+}
+
+button.multiTrip{
   width:66%;
- }
- button.multiCancel{
+}
+
+button.multiCancel{
   width:50px;
- }
- button.multiDropdown{
+}
+
+button.multiDropdown{
   width:50px;
- }
+}
  
  .button{
      border-radius: 10px;
@@ -412,6 +425,50 @@ td.actionButtons{
   overflow: hidden;
 }
 
+/* The detail row and everything nested in it: both the colspan'd wrapper cell and
+   the label/value cells of the subtable inside it match `#dataTable tbody td`
+   above, so without this they inherit the 120px cap meant for real columns. */
+#dataTable tbody td.child,
+#dataTable tbody td.child table td{
+  max-width: none;
+}
+
+/* A half-shown date is useless (2026-03-… says nothing), and it is a fixed, short
+   string, so it keeps its full width instead of taking a share of the ellipsis
+   budget — including at the narrower mobile cap below. */
+#dataTable tbody td.tripDate{
+  max-width: none;
+  white-space: nowrap;
+}
+
+/* Everything below is scoped to the wrapper, not #dataTable: with scrolling on,
+   DataTables clones the header into .dt-scroll-head and drops the id from the clone,
+   so an #dataTable-scoped rule never reaches the header that is actually on screen.
+   The wrapper contains both the cloned header and the real body table. */
+
+/* DataTables 2 right-aligns whatever it detects as a date or a number, which nothing
+   else here does and which pushes those values away from their column titles. */
+#dataTable_wrapper th.dt-type-date,
+#dataTable_wrapper td.dt-type-date,
+#dataTable_wrapper th.dt-type-numeric,
+#dataTable_wrapper td.dt-type-numeric{
+  text-align: left !important;
+}
+
+/* Each header is a flex row (span.dt-column-title inside div.dt-column-header) whose
+   title is set to grow, and for the columns DataTables detects as date/numeric the
+   row is reversed. That parks those titles hard right — where this table's own
+   absolutely positioned sort arrows sit — while every other title stays left, and it
+   makes the gap to the arrows depend on how much slack the column happens to have.
+   One direction, no growing: the title sits left and clear of the arrows everywhere. */
+#dataTable_wrapper thead > tr > th div.dt-column-header{
+  flex-direction: row;
+  justify-content: flex-start;
+}
+#dataTable_wrapper thead > tr > th div.dt-column-header span.dt-column-title{
+  flex-grow: 0;
+}
+
 #dataTable tbody td.flagList{
   min-width:120px;
   text-overflow:unset ;
@@ -419,23 +476,46 @@ td.actionButtons{
   white-space: unset;
 }
 
+/* The subtable has no intrinsic width, so without this it shrink-to-fits and
+   piles every label/value against the left edge of a full-width row. */
+td.child > table{
+  width: 100%;
+}
+
+/* Label column: sized to the longest label so the values line up in a column instead
+   of each row setting its own split, but never past half the row. Languages with long
+   compounds — German's "Durchschnittliche Geschwindigkeit" — otherwise claim nearly
+   the whole width and push the values off a phone screen. Past the cap the label
+   wraps (the generic `white-space: normal` below applies) rather than widening. */
+td.child table tr td:first-child{
+  width: 1%;
+  max-width: 50%;
+  padding-right: 16px;
+}
+
+/* Content only lands in the responsive child/subtable because it didn't fit the
+   fixed-width main row; ellipsing it there again would defeat the point, so this
+   is not scoped to the mobile media query below. */
+td.child table tr td{
+  white-space: normal !important;
+  text-overflow:unset !important;
+  overflow:auto !important;
+  padding: 8px 4px;
+  /* Baseline, not top: a value starting with a flag has a taller line box than
+     its label, so top-aligning the cells leaves the two texts off by a few px. */
+  vertical-align: baseline;
+}
+td.child table tr:not(:last-child) td{
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+}
+
 @media screen and (max-width: 600px) {
   #dataTable tbody td{
     max-width: 100px;
   }
 
-  td.child table tr td{
-    white-space: normal !important;
-    text-overflow:unset !important;
-    overflow:auto !important;
-  }
-  td.child table tr{
-    width:100%;
-  }
-
   .trips{
     padding: 0px;
-    margin-bottom:5em;
   }
 
   .multiLink{
@@ -448,7 +528,8 @@ td.actionButtons{
   }
 
   .bottom-space{
-    height: 15px;
+    /* As above: was 15px plus a standing 5em margin on .trips. */
+    height: 95px;
   }
 }
 
@@ -1700,15 +1781,6 @@ html, body {
 }
 
 
-table.dataTable.dtr-column>tbody>tr>td.dtr-control:before,
-table.dataTable.dtr-column>tbody>tr>th.dtr-control:before,
-table.dataTable.dtr-column>tbody>tr>td.control:before,
-table.dataTable.dtr-column>tbody>tr>th.control:before {
-
-  height:1em;
-  width:1em;
-}
-
 .leaderboardLink{
   text-decoration: none;
   transition: filter 0.1s;
@@ -1725,15 +1797,25 @@ table.dataTable.dtr-column>tbody>tr>th.control:before {
   filter: brightness(500%);
 }
 
-.dataTables_wrapper .dataTables_filter{
+.dt-container .dt-search {
   margin-bottom: 5px;
   text-align: center;
 }
-.dataTables_wrapper .dataTables_filter input {
+.dt-container .dt-search input {
   /* The body font is FlagEmojis-first; that flag-only font makes the browser
      mis-measure this search box's `size`-based intrinsic width, ballooning it
      to full width (notably on mobile). Reset to a normal text stack. */
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Narrow screens have no room for Previous/Next beside the page numbers, and the
+   pagingType option that would drop them is only read once at init, so it cannot
+   react to a resize. Scoped to the trips table's own bottom bar. */
+@media screen and (max-width: 767px) {
+  .dt-controls-bottom .dt-paging-button.previous,
+  .dt-controls-bottom .dt-paging-button.next {
+    display: none;
+  }
 }
 .dt-sort-btn {
   display: inline-block;
@@ -1759,7 +1841,7 @@ table.dataTable.dtr-column>tbody>tr>th.control:before {
   background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 11 6-6 6 6'/%3e%3c/svg%3e");
 }
 @media (min-width: 768px) {
-  .dataTables_wrapper .dataTables_filter {
+  .dt-container .dt-search {
     text-align: right;
   }
 }
@@ -1775,4 +1857,44 @@ table.dataTable.dtr-column>tbody>tr>th.control:before {
   .modal-dialog {
     min-height: calc(100% - 3.5rem);
   }
+}
+
+/* Hover preview for a cached ship photo — the admin register and the ferry
+   registration field on the trip forms. A thumbnail in the flow, with the full picture
+   as a sibling that only becomes visible on hover, so the row stays one line high and
+   nothing reflows.
+
+   Positioned FIXED, and placed by ship_thumb.js. It was absolute, which meant any
+   scroll container between the thumbnail and the page clipped it: a table-responsive
+   wrapper, a scrollable modal body, DataTables' own wrapper — the preview was cut off
+   at the edge of the box it lived in, which is most of the places it is used. A fixed
+   element is laid out against the viewport and no ancestor's overflow can crop it.
+   Bootstrap sets transform:none on a shown modal dialog, so this holds inside one too. */
+.ship-thumb {
+  position: relative;
+  display: inline-block;
+  vertical-align: middle;
+}
+.ship-thumb > img:first-child {
+  object-fit: cover;
+  border-radius: 3px;
+  cursor: zoom-in;
+}
+.ship-thumb .ship-thumb-full {
+  display: none;
+  position: fixed;
+  z-index: 1080;          /* above DataTables' header, below Bootstrap modals */
+  max-width: 420px;
+  max-height: 60vh;
+  width: auto;
+  height: auto;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .35);
+  border-radius: 4px;
+  background: #fff;
+  pointer-events: none;   /* never stands between the cursor and what is under it */
+}
+/* The fallback when the script has not run: fixed with no offsets lands the picture at
+   its own place in the flow, beside the thumbnail — misaligned, but visible. */
+.ship-thumb:hover .ship-thumb-full {
+  display: block;
 }
