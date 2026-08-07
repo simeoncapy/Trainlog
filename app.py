@@ -17,7 +17,6 @@ import zipfile
 from collections import Counter, defaultdict
 from datetime import date, datetime, time, timedelta, UTC
 from decimal import Decimal
-from functools import lru_cache
 from glob import glob
 from io import BytesIO, StringIO
 from shapely.geometry import shape, mapping
@@ -227,7 +226,6 @@ from src.trips import (
     delete_ticket_from_db,
     get_current_trip_id,
 )
-from src.trips.form_introspection import form_keys_read_by, literals_compared_with
 from src.paths import Path, coords_to_ewkt, fetch_path, geom_geojson_to_coords
 from src.trips.freehand_transform import (
     apply_to_trip,
@@ -6588,170 +6586,159 @@ def copyTrip(username):
 # patchTrip — partial edits.
 #
 # updateTrip/copyTrip rewrite every column from the posted form (update_trip.sql
-# has no COALESCE), so a payload that omits a field NULLs it. patchTrip instead
-# reconstructs a full form from the stored trip and overlays only the keys the
-# caller actually sent, making "absent" mean "leave alone". That also keeps an
-# older client safe when a field is added server-side: it never mentions the new
-# field, so the stored value survives.
+# has no COALESCE), so a payload that omits a field NULLs it. patchTrip renders
+# the stored trip back into the payload its edit form would have posted, replaces
+# just the fields the caller sent, and runs the result through the normal update
+# pipeline. An omitted field keeps its stored value, and a column added to the
+# table later is carried over without anything here knowing it exists.
 #
-# Nothing here lists the trip's fields. The set of patchable keys is read out of
-# the update pipeline's own source, the snapshot maps each key onto the matching
-# column by name, and anything the snapshot still gets wrong is caught by the
-# baseline comparison in _keep_untouched_values. A field added to the pipeline is
-# patchable with no change to this file.
+# The pipeline takes form fields rather than columns, which is why the trip is
+# rendered back into a form instead of the row simply being copied: `precision`
+# plus a start and end time become five columns by way of a timezone lookup, and
+# the route drives `countries` and `carbon`.
+#
+# The only field names written down below are the pipeline's date and route
+# inputs. Those are fixed vocabulary — nothing here mirrors the trips table.
 # ---------------------------------------------------------------------------
 
-# processDates has no branch for this one: it is what its final `else` means.
-UNKNOWN_PRECISION = "unknown"
+# processDates' date shapes, and what each one has to be given. Its final `else`
+# is a catch-all, so an unrecognised shape would silently strip a trip's dates.
+# unknownType is required rather than left to that catch-all's "future" default,
+# which would quietly turn a dateless past trip into a project.
+PRECISIONS = {
+    "preciseDates": ("newTripStart", "newTripEnd"),
+    "onlyDate": ("onlyDate",),
+    "unknown": ("unknownType",),
+}
+DATE_FORM_FIELDS = {"precision", "onlyDateDuration"}.union(*PRECISIONS.values())
+
+# Fields describing a freshly computed route, which the snapshot never carries.
+# Leaving path/altitude/timestamps/details out is what makes update_trip reuse the
+# stored geometry and leave the 3D flight track alone. trip_length and
+# estimated_trip_duration are the measurements that come with such a route: the
+# pipeline reads their presence as "this was just re-routed" and re-derives
+# `countries` from the path, which on a patch that never touched the route would
+# throw away the OSM electrification split stored in it.
+ROUTE_FORM_FIELDS = (
+    "path",
+    "altitude",
+    "timestamps",
+    "details",
+    "trip_length",
+    "estimated_trip_duration",
+)
 
 
-@lru_cache(maxsize=1)
-def _patchable_form_keys():
-    """Every form key the update pipeline reads, and so everything patchTrip can
-    accept. Empty would mean the introspection broke and every patch had silently
-    become a no-op, so fail loudly instead."""
-    keys = form_keys_read_by(update_trip_values_from_form_data, processDates)
-    if not keys:
-        raise RuntimeError("Could not determine the trip form fields")
-    return frozenset(keys)
-
-
-@lru_cache(maxsize=1)
-def _date_form_keys():
-    """The subset that describes when the trip happened."""
-    return frozenset(form_keys_read_by(processDates))
-
-
-@lru_cache(maxsize=1)
-def _recognised_precisions():
-    """Date shapes processDates knows. Any other value silently lands in its
-    catch-all and would strip the trip's dates, so patches are held to this set."""
-    return frozenset(literals_compared_with(processDates, "precision")) | {
-        UNKNOWN_PRECISION
-    }
-
-
-def _blank_if_none(value):
-    """Form fields use "" for "unset", which sanitize_param turns back into NULL.
-    A stored 0 is kept as 0 — unlike None, it is a real value."""
-    return "" if value is None else value
+def _camel_case(column):
+    """`line_name` -> `lineName`, the spelling the form uses for a few fields."""
+    head, *rest = column.split("_")
+    return head + "".join(word.capitalize() for word in rest)
 
 
 def _date_form_fields_from_trip(trip):
-    """A complete date snapshot of the trip: every field processDates might read,
-    filled in from what is stored. Being complete rather than only describing the
-    trip's current shape is what lets a caller switch `precision` on its own and
-    still land on the trip's real dates instead of on invented ones."""
+    """A complete date snapshot: every field processDates might read, filled in
+    from what is stored. Being complete rather than only describing the trip's
+    current shape is what lets a caller switch `precision` on its own and still
+    land on the trip's real dates instead of on invented ones."""
     start, end = trip["start_datetime"], trip["end_datetime"]
-    form = {"onlyDateDuration": _blank_if_none(trip["manual_trip_duration"])}
+    form = {"onlyDateDuration": _as_form_value(trip["manual_trip_duration"])}
 
     # 1 = future/project, -1 = past (adapt_pg_trip_row): no date to fall back on,
-    # so the fields the other shapes would need stay absent and a patch that
-    # switches to them has to supply its own.
+    # so the fields the other shapes need stay absent and a patch that switches to
+    # one of them has to bring its own.
     if start in (1, -1):
-        form["precision"] = UNKNOWN_PRECISION
+        form["precision"] = "unknown"
         form["unknownType"] = "future" if start == 1 else "past"
-    else:
-        start_dt = datetime.strptime(start, "%Y-%m-%d %H:%M:%S")
-        end_dt = (
-            datetime.strptime(end, "%Y-%m-%d %H:%M:%S")
-            if end not in (1, -1)
-            else start_dt
-        )
-        form.update(
-            {
-                "newTripStart": start_dt.strftime("%Y-%m-%dT%H:%M"),
-                "newTripEnd": end_dt.strftime("%Y-%m-%dT%H:%M"),
-                "onlyDate": start_dt.strftime("%Y-%m-%d"),
-                # Which side of now the trip sits on, should a patch drop its dates.
-                "unknownType": "past" if start_dt < datetime.now() else "future",
-                # The seconds field is a marker, not a time: 01 means date-only.
-                "precision": "onlyDate" if start_dt.second == 1 else "preciseDates",
-            }
-        )
+        return form
 
-    # Should processDates ever rename a shape, patches would quietly start
-    # stripping dates rather than failing. Refuse to serve one instead.
-    if form["precision"] not in _recognised_precisions():
-        raise RuntimeError(f"Unrecognised date precision '{form['precision']}'")
+    start_dt = datetime.strptime(start, "%Y-%m-%d %H:%M:%S")
+    end_dt = (
+        datetime.strptime(end, "%Y-%m-%d %H:%M:%S") if end not in (1, -1) else start_dt
+    )
+    form.update(
+        {
+            "newTripStart": start_dt.strftime("%Y-%m-%dT%H:%M"),
+            "newTripEnd": end_dt.strftime("%Y-%m-%dT%H:%M"),
+            "onlyDate": start_dt.strftime("%Y-%m-%d"),
+            # Which side of now the trip sits on, should a patch drop its dates.
+            "unknownType": "past" if start_dt < datetime.now() else "future",
+            # The seconds field is a marker, not a time: 01 means date-only.
+            "precision": "onlyDate" if start_dt.second == 1 else "preciseDates",
+        }
+    )
     return form
 
 
-def build_form_data_from_trip(trip_id, trip=None):
-    """Reconstruct the edit-form payload for a stored trip, to overlay a patch on.
+def _as_form_value(value):
+    """As a form would carry it: everything is text, and "" means unset — which
+    sanitize_param turns back into NULL. Keeping to that spelling matters, since
+    the pipeline tests some fields for truthiness and a bare 0 would read as
+    unset where "0" does not."""
+    return "" if value is None else str(value)
 
-    Each form key is matched to the column of the same name, allowing for the few
-    the form spells in camelCase (lineName, powerType, co2Override). Keys with no
-    column behind them — path, altitude, timestamps, details — are left out, which
-    is what makes update_trip reuse the stored geometry and leave the 3D track
-    alone unless the caller sends a new route.
+
+def build_form_data_from_trip(trip_id, trip=None):
+    """Render a stored trip back into the payload its edit form would have posted.
+
+    Every column is offered under both its own name and its camelCase spelling,
+    because the form uses the latter for a handful of them (lineName, powerType,
+    co2Override). Columns the pipeline does not read it simply ignores, so this
+    needs no knowledge of which ones matter — including any added later.
     """
     trip = trip if trip is not None else get_trip_pg(trip_id)
     if trip is None:
         abort(404)
 
-    form = _date_form_fields_from_trip(trip)
-    for key in _patchable_form_keys() - set(form):
-        for column in (key, re.sub(r"(?<!^)(?=[A-Z])", "_", key).lower()):
-            if column in trip:
-                form[key] = _blank_if_none(trip[column])
-                break
+    form = {}
+    for column, value in trip.items():
+        if column not in ROUTE_FORM_FIELDS:
+            form[column] = form[_camel_case(column)] = _as_form_value(value)
+    form.update(_date_form_fields_from_trip(trip))
     return form
 
 
-def _keep_untouched_values(new_trip, baseline, stored_trip):
-    """Restore every value the patch had no say in.
-
-    `baseline` is what the snapshot alone produces, so any attribute where the
-    patched run agrees with it is one the caller's fields did not reach — and for
-    those the stored trip is the truth, whatever the snapshot happened to
-    reconstruct. This is what allows the snapshot to be built generically: where
-    it is imperfect, both runs are imperfect in the same way, and the stored value
-    wins. It is also why a patch cannot disturb a derived field it never mentioned,
-    such as the OSM electrification split inside `countries`.
-    """
-    for attr, baseline_value in vars(baseline).items():
-        if hasattr(stored_trip, attr) and getattr(new_trip, attr) == baseline_value:
-            setattr(new_trip, attr, getattr(stored_trip, attr))
-
-
-def _validate_trip_patch(patched):
-    """Reject date payloads processDates would misread. Everything else is safe to
-    merge — an absent key simply keeps the stored value. Returns an error message,
-    or None when the patch is sound."""
-    precision = patched.get("precision")
-    if precision is not None and precision not in _recognised_precisions():
-        return (
-            f"Unknown precision '{precision}'; expected one of "
-            f"{', '.join(sorted(_recognised_precisions()))}"
-        )
-
-    dates = (_date_form_keys() & set(patched)) - {"precision"}
-    if dates and precision is None:
-        return (
-            f"{', '.join(sorted(dates))} also require 'precision'; without it the"
-            " trip keeps its current date shape and they would be ignored"
-        )
-    return None
-
-
-def _read_patch_payload(payload):
-    """Split a payload into the fields patchTrip understands and the rest."""
-    known = _patchable_form_keys()
+def _read_patch_payload(payload, snapshot):
+    """The caller's fields, spelled the way the pipeline expects, plus the keys
+    that match nothing and were therefore ignored."""
     patched = {}
     for key, value in payload.items():
-        if key not in known:
-            continue
         # A JSON client sends routes and waypoints as arrays; the pipeline wants
         # the serialised form a form post carries. null means "clear", like "".
         if isinstance(value, (list, dict)):
             value = json.dumps(value)
         patched[key] = "" if value is None else value
+
     # An empty route is a broken payload rather than a clear — and merely naming
     # "path" makes update_trip replace the geometry and drop the 3D track with it.
     if patched.get("path") == "":
         del patched["path"]
-    return patched, sorted(set(payload) - known)
+
+    known = set(snapshot) | DATE_FORM_FIELDS | set(ROUTE_FORM_FIELDS)
+    return patched, sorted(set(patched) - known)
+
+
+def _validate_trip_patch(formData, patched):
+    """Reject date payloads processDates would misread or choke on. Everything
+    else is safe to merge — an absent key just keeps its stored value. Returns an
+    error message, or None when the patch is sound."""
+    precision = patched.get("precision")
+    if precision is not None and precision not in PRECISIONS:
+        return (
+            f"Unknown precision '{precision}'; expected one of "
+            f"{', '.join(sorted(PRECISIONS))}"
+        )
+
+    dates = sorted((set(patched) & DATE_FORM_FIELDS) - {"precision"})
+    if dates and precision is None:
+        return (
+            f"{', '.join(dates)} also require 'precision'; without it the trip"
+            " keeps its current date shape and they would be ignored"
+        )
+
+    missing = [f for f in PRECISIONS[formData["precision"]] if not formData.get(f)]
+    if missing:
+        return f"precision '{formData['precision']}' also requires {', '.join(missing)}"
+    return None
 
 
 @app.route("/u/<username>/patchTrip", methods=["GET", "POST"])
@@ -6780,25 +6767,31 @@ def patchTrip(username):
 
     check_current_user_owns_trip(trip_id)
 
-    patched, ignored = _read_patch_payload(payload)
-    error = _validate_trip_patch(patched)
-    if error:
-        return jsonify({"error": error}), 400
-
     stored = get_trip_pg(trip_id)
     if stored is None:
         abort(404)
 
     snapshot = build_form_data_from_trip(trip_id, stored)
+    patched, ignored = _read_patch_payload(payload, snapshot)
     formData = {**snapshot, **patched}
 
-    # Both runs happen before anything is written, so an incomplete patch (a
-    # precision with no date to go with it, say) fails without touching the trip.
+    # Distance and duration are only honoured as a pair, so send the stored
+    # counterpart along with whichever of them was patched.
+    for field, counterpart in (
+        ("trip_length", "estimated_trip_duration"),
+        ("estimated_trip_duration", "trip_length"),
+    ):
+        if field in patched and counterpart not in patched:
+            formData[counterpart] = _as_form_value(stored[counterpart])
+
+    error = _validate_trip_patch(formData, patched)
+    if error:
+        return jsonify({"error": error}), 400
+
     try:
-        baseline = update_trip_values_from_form_data(trip_id, snapshot)
         new_trip = update_trip_values_from_form_data(trip_id, formData)
     except (KeyError, ValueError) as e:
-        return jsonify({"error": f"Incomplete patch: missing or invalid {e}"}), 400
+        return jsonify({"error": f"Invalid patch: {e}"}), 400
 
     new_type = patched.get("type")
     if new_type and new_type != stored["type"]:
@@ -6820,7 +6813,6 @@ def patchTrip(username):
         update_trip_type(trip_id, target_type)
         new_trip = update_trip_values_from_form_data(trip_id, formData)
 
-    _keep_untouched_values(new_trip, baseline, get_trip(trip_id))
     update_trip(trip_id, new_trip, formData)
 
     return jsonify(
