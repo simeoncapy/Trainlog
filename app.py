@@ -6741,7 +6741,11 @@ def patchTrip(username):
     stored = get_trip_pg(trip_id)
 
     patched = _read_patch_payload(payload)
-    ignored = sorted(set(patched) - set(stored) - set(ROUTE_FIELDS))
+    # Anything that names neither a column (under either spelling) nor the route
+    # is a key nothing downstream reads. It is reported rather than refused, so a
+    # client sending a field this version predates is told, not broken.
+    known = set(stored) | {_camel_case(c) for c in stored} | set(ROUTE_FIELDS)
+    ignored = sorted(set(patched) - known)
     trip = {**stored, **patched}
 
     try:
