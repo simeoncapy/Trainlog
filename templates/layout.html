@@ -2,6 +2,8 @@
 <html lang="{{ langId }}">
 
 <head>
+  {% if session.get("userinfo", {}).get("is_owner") %}<script>window.TRAINLOG_OWNER = true;</script>{% endif %}
+  <script>window.MAP_LANG = {{ (mapLang or langId or "en")|tojson }};</script>
   <title>Train log</title>
   <meta charset="utf-8">
   
@@ -36,9 +38,11 @@
   <script src="{{ url_for('static',filename='js/lib/leaflet-numbered-markers.js') }}"></script>
   <script src="{{ url_for('static',filename='js/lib/leaflet.geometryutil.js') }}"></script>
   <script src="{{ static_autoversion(filename='js/map.js') }}"></script>
-  <script src="{{ url_for('static',filename='js/util.js') }}"></script>
+  <script src="{{ static_autoversion(filename='js/util.js') }}"></script>
   <script>
     window.colorblindMode = {{ 'true' if colorblind else 'false' }};
+    window.exactWaypointsDefault = {{ 'true' if exact_waypoints_default else 'false' }};
+    window.exactTracks = {{ 'true' if exact_tracks else 'false' }};
   </script>
   <script src="{{ static_autoversion(filename='js/routing.js') }}"></script>
 

@@ -11,6 +11,7 @@ from icalendar import Calendar
 from py.utils import load_config, getCountryFromCoordinates, get_flag_emoji, getDistance, getCountriesFromPath
 from src.trips import Trip, create_trip
 from src.routing import forward_routing_core
+from src.graphhopper import decode_polyline
 from src.utils import get_default_trip_visibility
 from src.paths import fetch_path
 from src.pg import pg_session
@@ -75,39 +76,69 @@ def call_ai_json(prompt, images=None, model=None, timeout=120):
 
 
 class FakeRequest:
-    def __init__(self):
+    def __init__(self, use_new_router=False):
         self.query_string = b"overview=full&geometries=geojson"
-        self.args = {"use_new_router": "false"}
+        self.args = {"use_new_router": "true" if use_new_router else "false"}
 
-def route_path(origin, destination, trip_type):
-    routable_types = {"train", "tram", "metro", "ferry", "aerialway", "bus", "car", "walk", "cycle"}
-    if trip_type not in routable_types:
-        return None
-    
-    routing_type_map = {"tram": "train", "metro": "train"}
+# The trip types the website routes with the new (GraphHopper) router by default
+# (NEW_ROUTER_TYPES in routing.js).
+NEW_ROUTER_TYPES = {"train", "tram", "metro", "funicular", "rail"}
+
+def _routed(points, trip_type, use_new_router):
+    """(path, duration seconds, routing details) from one router, or (None, None, None)."""
+    routing_type_map = {"tram": "train", "metro": "train", "funicular": "train", "rail": "train"}
     routing_type = routing_type_map.get(trip_type, trip_type)
-    
-    coords = f"{origin['lng']},{origin['lat']};{destination['lng']},{destination['lat']}"
+    coords = ";".join(f"{p['lng']},{p['lat']}" for p in points)
     path = f"route/v1/{'driving' if routing_type in ('bus', 'car') else routing_type}/{coords}"
-    
+
     try:
-        result = forward_routing_core(routing_type, path, FakeRequest())
+        # The trip type itself, so the new router picks its tram/metro/all profile.
+        result = forward_routing_core(trip_type if use_new_router else routing_type, path, FakeRequest(use_new_router))
         if hasattr(result, 'get_json'):
             data = result.get_json()
         elif isinstance(result, str):
             data = json.loads(result)
         else:
             data = result
-        
+
         if data and "routes" in data and data["routes"]:
-            geometry = data["routes"][0].get("geometry", {})
-            coords_list = geometry.get("coordinates", [])
+            route = data["routes"][0]
+            geometry = route.get("geometry", {})
+            if isinstance(geometry, str):
+                # The new router's encoded polyline.
+                coords_list = [[lng, lat] for lat, lng in decode_polyline(geometry, precision=5)]
+            else:
+                coords_list = geometry.get("coordinates", [])
+            details = route.get("details") if isinstance(route.get("details"), dict) else None
             if coords_list:
-                return [{"lat": c[1], "lng": c[0]} for c in coords_list]
+                return [{"lat": c[1], "lng": c[0]} for c in coords_list], route.get("duration"), details
     except Exception as e:
         logger.warning(f"Routing failed for {trip_type}: {e}")
-    
-    return None
+
+    return None, None, None
+
+def route_via(points, trip_type):
+    """Route through points (origin, any vias, destination), as the website would:
+    rail on the new router, falling back to the old one. Returns (path, duration
+    seconds, routing details); details (electrification) only from the new router."""
+    routable_types = {"train", "tram", "metro", "funicular", "rail", "ferry", "aerialway", "bus", "car", "walk", "cycle"}
+    if trip_type not in routable_types:
+        return None, None, None
+    if trip_type in NEW_ROUTER_TYPES:
+        routed = _routed(points, trip_type, True)
+        if routed[0]:
+            return routed
+    return _routed(points, trip_type, False)
+
+def route_path(origin, destination, trip_type):
+    """Returns (path, duration_seconds). duration_seconds is the router's own
+    estimate (e.g. OSRM `routes[0].duration`), or None if unavailable."""
+    path, duration, _ = route_via([origin, destination], trip_type)
+    return path, duration
+
+def path_length(path):
+    """Length of a [{lat, lng}, ...] path in metres, along every point."""
+    return sum(getDistance(a, b) for a, b in zip(path, path[1:]))
 
 def get_airport_by_iata(iata):
     with pg_session() as pg:
@@ -215,7 +246,7 @@ def geocode_station(query, trip_type="train", fallback_coords=None, city_fallbac
                     continue
 
             country_code = props.get("countrycode", "")
-            if not country_code or country_code in ["CN", "FI"]:
+            if not country_code or country_code in ["CN", "FI", "ES"]:
                 country = getCountryFromCoordinates(lat, lng)
                 country_code = country.get("countryCode", "")
 
@@ -415,10 +446,15 @@ def enrich_parsed_trip(parsed_trip):
         parsed_trip["_origin_coords"] = {"lat": origin_geo["lat"], "lng": origin_geo["lng"]}
         parsed_trip["_dest_coords"] = {"lat": dest_geo["lat"], "lng": dest_geo["lng"]}
         
-        routed_path = route_path(parsed_trip["_origin_coords"], parsed_trip["_dest_coords"], trip_type)
-        parsed_trip["_path"] = routed_path if routed_path else [parsed_trip["_origin_coords"], parsed_trip["_dest_coords"]]
-    
-    parsed_trip["_distance"] = getDistance(parsed_trip["_path"][0], parsed_trip["_path"][-1])
+        # Through the timetable run's stops when there are some (_via, from MCP
+        # add_trip with a Transitous run), as the website routes a picked departure.
+        points = [parsed_trip["_origin_coords"], *parsed_trip.get("_via", []), parsed_trip["_dest_coords"]]
+        routed_path, routed_duration, details = route_via(points, trip_type)
+        parsed_trip["_path"] = routed_path if routed_path else points
+        parsed_trip["_route_duration"] = routed_duration
+        parsed_trip["_route_details"] = details
+
+    parsed_trip["_distance"] = path_length(parsed_trip["_path"])
     return parsed_trip
 
 def create_trip_from_parsed(user, parsed_trip, purchase_date=None, source="ai"):
@@ -468,7 +504,7 @@ def create_trip_from_parsed(user, parsed_trip, purchase_date=None, source="ai"):
             dest_point = {"lat": dest_airport["latitude"], "lng": dest_airport["longitude"]}
 
         path = resolved_path if resolved_path else [origin_point, dest_point]
-        trip_length = parsed_trip.get("_distance") or getDistance(path[0], path[-1])
+        trip_length = parsed_trip.get("_distance") or path_length(path)
 
         # Split distance between origin/destination country (keeps prior behavior)
         origin_country = getCountryFromCoordinates(path[0]["lat"], path[0]["lng"])
@@ -504,10 +540,13 @@ def create_trip_from_parsed(user, parsed_trip, purchase_date=None, source="ai"):
         if resolved_path:
             path = resolved_path
         else:
-            routed_path = route_path(origin_point, dest_point, trip_type)
+            routed_path, routed_duration, details = route_via([origin_point, dest_point], trip_type)
             path = routed_path if routed_path else [origin_point, dest_point]
+            if routed_duration is not None:
+                parsed_trip["_route_duration"] = routed_duration
+            parsed_trip["_route_details"] = details
 
-        trip_length = parsed_trip.get("_distance") or getDistance(path[0], path[-1])
+        trip_length = parsed_trip.get("_distance") or path_length(path)
         if trip_type in ("air", "helicopter"):
             countries = {}
             countries[getCountryFromCoordinates(path[0])["countryCode"]] = (
@@ -518,7 +557,7 @@ def create_trip_from_parsed(user, parsed_trip, purchase_date=None, source="ai"):
             )
             countries = json.dumps(countries)
         else:
-            countries = getCountriesFromPath(path, trip_type, None, None)
+            countries = getCountriesFromPath(path, trip_type, parsed_trip.get("_route_details"), None)
         material_type = None
     
     tf = TimezoneFinder()
@@ -571,6 +610,11 @@ def create_trip_from_parsed(user, parsed_trip, purchase_date=None, source="ai"):
         estimated_duration = int((utc_end_datetime - utc_start_datetime).total_seconds())
         if estimated_duration < 0:
             estimated_duration = 0
+
+    # No timing info to derive a duration from (e.g. MCP calls without
+    # departure/arrival times) — fall back to the router's own estimate.
+    if not estimated_duration and parsed_trip.get("_route_duration"):
+        estimated_duration = int(parsed_trip["_route_duration"])
     
     trip = Trip(
         username=user.username, user_id=user.uid, origin_station=origin_station, destination_station=dest_station,
@@ -578,8 +622,10 @@ def create_trip_from_parsed(user, parsed_trip, purchase_date=None, source="ai"):
         trip_length=trip_length, estimated_trip_duration=estimated_duration, manual_trip_duration=None,
         operator=parsed_trip.get("operator"), line_name=parsed_trip.get("line_name"), created=now, last_modified=now,
         type=trip_type, price=parsed_trip.get("price"), currency=parsed_trip.get("currency"), purchasing_date=purchase_date,
-        ticket_id=None, is_project=False, path=path, countries=countries, seat=parsed_trip.get("seat"),
-        material_type=material_type, material_type_advanced=None, reg=None, waypoints=None, notes=build_notes(parsed_trip, user.lang, source), visibility=get_default_trip_visibility(trip_type)
+        ticket_ids=[], is_project=False, path=path, countries=countries, seat=parsed_trip.get("seat"),
+        material_type=material_type, material_type_advanced=None, reg=None, waypoints=parsed_trip.get("_waypoints"), notes=build_notes(parsed_trip, user.lang, source), visibility=get_default_trip_visibility(trip_type),
+        departure_platform=parsed_trip.get("departure_platform"), arrival_platform=parsed_trip.get("arrival_platform"),
+        departure_delay=parsed_trip.get("departure_delay"), arrival_delay=parsed_trip.get("arrival_delay"),
     )
     
     create_trip(trip)

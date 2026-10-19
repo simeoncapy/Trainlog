@@ -35,6 +35,29 @@
 /* distance + info icon share one row */
 #sidebar .route-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 11px; }
 
+/* Groups the distance/electrification chips as one flex unit within .route-meta,
+   so the freehand-toggle button (appended as a sibling, pushed right via
+   margin-left:auto below) wraps as a whole relative to the chips instead of
+   interleaving with them individually when the row runs out of width. */
+#sidebar .route-meta-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* The electrification chip is rendered in a loading state first so its space is
+   reserved and the row doesn't visibly grow a chip once the request lands. */
+#sidebar .route-elec.elec-loading { color: #9ca3af; min-width: 74px; text-align: center; }
+
+/* Once the freehand button no longer fits beside the chips it takes the whole
+   next row, rather than sitting stranded at the right of an empty one.
+   syncFreehandWrap() in routing.js adds the class when it measures a wrap. */
+#sidebar .route-meta .freehand-toggle-btn.fh-wrapped {
+  flex: 1 1 100%; margin-left: 0; justify-content: center;
+}
+
+/* ...and with the row to themselves, the chips stretch across it too, so the
+   block reads as one full-width stack rather than a short row above a wide button. */
+#sidebar .route-meta.chips-full .route-meta-chips { width: 100%; }
+#sidebar .route-meta.chips-full .route-meta-chips > .route-dist-wrap { flex: 1 1 auto; }
+#sidebar .route-meta.chips-full .route-dist { display: block; text-align: center; }
+
 /* hint (route notes / which bus router answered): a small badge pinned to the
    distance chip's top-right corner, opening a floating bubble below it */
 #sidebar .route-dist-wrap { position: relative; display: inline-block; }
@@ -57,10 +80,32 @@
   padding: 7px 9px; font-size: .78rem; line-height: 1.4; color: #4b5563;
   white-space: normal; text-align: left;
 }
-#sidebar .route-bubble::before { /* caret pointing back up at the badge */
-  content: ""; position: absolute; top: -5px; left: 8px; width: 8px; height: 8px;
+/* caret pointing back up at the badge. --bubble-dx is set by clampRouteBubble()
+   in routing.js when it has to nudge the bubble away from a panel edge; the caret
+   shifts the opposite way so it keeps pointing at the badge. */
+#sidebar .route-bubble::before {
+  content: ""; position: absolute; top: -5px;
+  left: clamp(8px, calc(8px - var(--bubble-dx, 0px)), calc(100% - 16px));
+  width: 8px; height: 8px;
   background: #fff; border-left: 1px solid #e5e7eb; border-top: 1px solid #e5e7eb;
   transform: rotate(45deg);
+}
+
+/* Per-country electrification breakdown inside a route-bubble */
+#sidebar .elec-country-list { margin-top: 6px; padding-top: 6px; border-top: 1px solid #eef0f3; }
+#sidebar .elec-country-row { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
+#sidebar .elec-country-row span:first-child { flex: 1; } /* name left, km + % together on the right */
+#sidebar .elec-country-km { color: #9ca3af; font-variant-numeric: tabular-nums; }
+#sidebar .elec-country-row span:last-child { font-weight: 600; color: #374151; font-variant-numeric: tabular-nums; }
+
+/* propulsion override, inside the same bubble as the breakdown it changes */
+#sidebar .elec-override {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: 7px; padding-top: 7px; border-top: 1px solid #eef0f3;
+}
+#sidebar .elec-override-select {
+  font: inherit; color: #374151; background: #fff;
+  border: 1px solid #d7dbe0; border-radius: 6px; padding: 2px 4px; cursor: pointer;
 }
 
 /* amber when the car router was used as a bus fallback */
@@ -127,6 +172,12 @@
 /* close (x) */
 .leaflet-sidebar .close { font-size: 22px; color: #9ca3af; }
 .leaflet-sidebar .close:hover { color: #4b5563; }
+/* Tucked into the panel's corner so it covers neither the title nor the box below it; the
+   title leaves it room instead. */
+.leaflet-sidebar .close { top: 9px; right: 11px; width: 26px; height: 26px; font-size: 20px; line-height: 26px; }
+/* On desktop the panel floats 10px in from the container the button is placed against */
+@media (min-width: 768px) { .leaflet-sidebar .close { top: 19px; right: 21px; } }
+#sidebar h4 { padding-right: 28px; }
 
 /* ── Mobile ──────────────────────────────────────────────────────────────────
    The plugin makes the panel a cramped 20%-tall band at the top; give it room to fit its
@@ -140,4 +191,37 @@
   }
   #sidebar h4 { margin-bottom: 9px; font-size: .96rem; }
   #sidebar .submit-main, #sidebar .submit-continue { padding: 12px 14px; }
+}
+
+/* Desktop routing page: the panel is a column whose route timeline takes whatever height
+   the other blocks leave (more when the options tray is closed), scrolling if it is long.
+   */
+/* Not on a phone, where it would take too much of the map */
+#sidebar .route-timeline { display: none; }
+
+@media (min-width: 768px) {
+  #sidebar:has(.route-timeline) { display: flex; flex-direction: column; }
+  #sidebar:has(.route-timeline) > * { flex: 0 0 auto; }
+  #sidebar .route-timeline {
+    flex: 1 1 0; min-height: 90px; overflow-y: auto; margin: 0 0 11px; padding: 4px 14px 4px 0;  /* right: clear of its scrollbar */
+    list-style: none; display: flex; flex-direction: column; justify-content: flex-start;
+  }
+  #sidebar:has(.route-timeline) > .route-timeline { flex: 1 1 0; order: 1; }  /* last: options, buttons, then the timeline */
+  #sidebar .rt-item { position: relative; display: flex; align-items: baseline; gap: 8px; padding: 5px 0 5px 28px; color: #4b5563; font-size: .9em; }
+  #sidebar .rt-item::before {   /* the line */
+    content: ""; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: #e2e6eb;
+  }
+  #sidebar .rt-item:first-child::before { top: 50%; }
+  #sidebar .rt-item:last-child::before { bottom: 50%; }
+  #sidebar .rt-item::after {    /* the ball */
+    content: ""; position: absolute; left: 6px; top: 50%; width: 6px; height: 6px; margin-top: -3px;
+    border-radius: 50%; background: #b3bac4; box-sizing: content-box;
+  }
+  #sidebar .rt-unnamed { color: #9ca3af; font-variant-numeric: tabular-nums; }
+  #sidebar .rt-end { padding: 10px 0 10px 28px; font-size: 1.02rem; font-weight: 700; color: #111827; }
+  #sidebar .rt-end::after {
+    left: 2px; width: 8px; height: 8px; margin-top: -7px; background: #fff; border: 3px solid #3b63b8;
+  }
+  #sidebar .rt-name { min-width: 0; overflow-wrap: anywhere; }
+  #sidebar .rt-time { color: #8a93a2; font-weight: 400; white-space: nowrap; margin-left: auto; }
 }
