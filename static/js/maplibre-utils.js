@@ -880,9 +880,6 @@ function addTripSliceLayers(map, sourceId, transportTypes, options = {}) {
     const { onLayerClick = null } = options;
     const time = ['get', 'time'];
     const isAir = ['==', ['get', 'type'], 'air'];
-    const typeColor = ['match', ['get', 'type']];
-    transportTypes.forEach(type => typeColor.push(type.id, type.color));
-    typeColor.push('#888888');
 
     if (!map.getSource(sourceId)) {
         map.addSource(sourceId, {
@@ -907,11 +904,7 @@ function addTripSliceLayers(map, sourceId, transportTypes, options = {}) {
             id: `${sourceId}-line`,
             clickable: true,
             paint: {
-                'line-color': ['case',
-                    ['==', time, 'current'], '#ff0000',
-                    ['==', time, 'future'], '#ffffff',
-                    typeColor
-                ],
+                'line-color': tripLineColor(transportTypes),
                 'line-width': ['case', ['==', time, 'current'], 4, isAir, 1, 3],
                 'line-opacity': ['case',
                     ['==', time, 'current'],
@@ -945,6 +938,99 @@ function addTripSliceLayers(map, sourceId, transportTypes, options = {}) {
             map.on('mouseleave', layer.id, () => { map.getCanvas().style.cursor = ''; });
         }
     });
+}
+
+// Line colour of the slice layers: by transport type, or by year when given a
+// { year: colour } map. Current and future trips keep their own colours.
+function tripLineColor(transportTypes, yearColors = null) {
+    const pairs = yearColors
+        ? Object.entries(yearColors).flat()
+        : transportTypes.flatMap(type => [type.id, type.color]);
+    const color = pairs.length
+        ? ['match', ['get', yearColors ? 'year' : 'type'], ...pairs, '#888888']
+        : '#888888';
+    return ['case',
+        ['==', ['get', 'time'], 'current'], '#ff0000',
+        ['==', ['get', 'time'], 'future'], '#ffffff',
+        color
+    ];
+}
+
+// Oldest to newest. Changes hue all along, so neighbouring years stay apart,
+// and ends in magenta rather than the red of current trips.
+const YEAR_RAMP = ['#3b3eac', '#2f7fd8', '#17becf', '#2ca02c', '#c2b000', '#f28e2b', '#d6339b'];
+
+// How much a year's count weighs on its colour, from the viewer's slider: 1 spreads
+// the busy years over most of the ramp, 0 gives every year the same step
+function yearSpread() {
+    try {
+        const spread = parseFloat(localStorage.getItem('yearColorSpread'));
+        return spread >= 0 && spread <= 1 ? spread : 1;
+    } catch (e) {
+        return 1;
+    }
+}
+
+function setYearSpread(spread) {
+    try { localStorage.setItem('yearColorSpread', spread); } catch (e) {}
+}
+
+// { year: colour } from { year: count }. Each year sits on the ramp at the middle
+// of its share of the weighted count, so with a full spread the busy years spread
+// over most of it instead of a few sparse early ones
+function yearColors(counts) {
+    const years = Object.keys(counts).sort();
+    const spread = yearSpread();
+    const weights = years.map(year => counts[year] ** spread);
+    const total = weights.reduce((n, weight) => n + weight, 0);
+    let before = 0;
+    const positions = weights.map(weight => {
+        const position = (before + weight / 2) / total;
+        before += weight;
+        return position;
+    });
+    const first = positions[0], span = positions[positions.length - 1] - first;
+
+    const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+    const colors = {};
+    years.forEach((year, i) => {
+        const x = (span ? (positions[i] - first) / span : 0.5) * (YEAR_RAMP.length - 1);
+        const j = Math.min(Math.floor(x), YEAR_RAMP.length - 2);
+        const a = rgb(YEAR_RAMP[j]), b = rgb(YEAR_RAMP[j + 1]);
+        colors[year] = `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * (x - j))).join(',')})`;
+    });
+    return colors;
+}
+
+function toggleYearLegend(button) {
+    const asList = button.parentElement.classList.toggle('as-list');
+    try { localStorage.setItem('yearLegendAsList', asList); } catch (e) {}
+}
+
+// Legend of yearColors(): a row per year, newest first, or one bar, which a
+// button switches between; the bar by default when the rows would be too many
+function yearLegendHtml(colors) {
+    const entries = Object.entries(colors);
+    if (!entries.length) return '';
+    const labels = [entries[0], entries[Math.floor(entries.length / 2)], entries[entries.length - 1]];
+    let asList = entries.length <= 10;
+    try { asList = (localStorage.getItem('yearLegendAsList') ?? String(asList)) === 'true'; } catch (e) {}
+    return `
+        <div class="year-legend${asList ? ' as-list' : ''}">
+            <button type="button" class="year-legend-toggle" onclick="MapLibreUtils.toggleYearLegend(this)">
+                <i class="fa-solid fa-list-ul"></i><i class="fa-solid fa-grip-lines"></i>
+            </button>
+            <div class="year-list">${entries.slice().reverse().map(([year, color]) => `
+                <div class="legend-item">
+                    <div class="legend-line" style="background-color: ${color};"></div>
+                    <span>${year}</span>
+                </div>`).join('')}</div>
+            <div class="year-bar">
+                <div class="year-ramp">${entries.map(([year, color]) =>
+                    `<div title="${year}" style="background-color: ${color};"></div>`).join('')}</div>
+                <div class="year-ramp-labels">${labels.map(([year]) => `<span>${year}</span>`).join('')}</div>
+            </div>
+        </div>`;
 }
 
 // Update layer visibility based on filters
@@ -1450,6 +1536,12 @@ window.MapLibreUtils = {
     tripToFeature,
     buildTripLayers,
     addTripSliceLayers,
+    tripLineColor,
+    yearColors,
+    yearSpread,
+    setYearSpread,
+    toggleYearLegend,
+    yearLegendHtml,
     updateLayerVisibility,
     fitBoundsToVisibleFeatures,
     modifyVectorStyle

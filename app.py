@@ -99,6 +99,7 @@ from src.g_search import (
     search_commons_images,
 )
 from src.wikidata import search_ships as wikidata_search_ships
+from src.visited_squares import generate_visited_squares_geojson
 from py.image_generator import generate_image
 from src.sql.leaderboards import get_leaderboard_countries_query
 from src.sql.percents import upsert_percent_query
@@ -156,7 +157,6 @@ from py.utils import (
     getIpDetails,
     getRequestData,
     hex_to_rgb,
-    interpolate_great_circle,
     interpolate_points_if_gaps,
     interpolate_track_if_gaps,
     load_config,
@@ -177,7 +177,7 @@ from src.api.feature_requests import feature_requests_blueprint
 from src.api.vagonweb import vagonweb_blueprint
 from src.api.leaderboards import _getLeaderboardUsers
 from src.api.news import news_blueprint
-from src.api.og import og_blueprint, og_image_url
+from src.api.og import og_blueprint, og_image_url, plan_og_image_url
 from src.api.finance import finance_blueprint
 from src.api.bmc import bmc_blueprint, reconcile_pending_events
 from src.api.discord_oauth import discord_oauth_blueprint
@@ -281,7 +281,7 @@ from src.trips import (
     change_trips_visibility,
     get_current_trip_id,
 )
-from src.paths import Path, coords_to_ewkt, fetch_path, fetch_raw_path, geom_geojson_to_coords
+from src.paths import Path, coords_to_ewkt, fetch_raw_path, geom_geojson_to_coords
 from src.trips.freehand_transform import (
     apply_to_trip,
     purge_expired_backups,
@@ -322,6 +322,7 @@ from src.users import (User, Friendship, all_rail_stations, authDb, ensure_stati
                        new_station_search,
                        exact_waypoints_context, map_lang_context, station_names_context,
                        valid_station_names)
+from src import theme as theme_module
 from src.email_parser import start_email_listener
 from src.trip_announcer import (
     announced_trip_ids,
@@ -457,6 +458,7 @@ app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
 
 authDb.init_app(app)
+theme_module.init_app(app)
 
 def fetch_and_filter_flights(flight_filter_key, flight_filter_value, target_date):
     from_iso = f"{target_date - timedelta(days=1)}T12:00:00"
@@ -708,6 +710,7 @@ def changeLang(langToSet, session=False):
     session["userinfo"]["is_admin"] = True if user and user.admin else False
     session["userinfo"]["is_translator"] = True if user and user.translator else False
     session["userinfo"]["is_feature_admin"] = True if user and user.feature_admin else False
+    theme_module.fill_session(session["userinfo"], user)
     session["userinfo"]["available_languages"] = available_languages
     session["userinfo"]["lang"] = langToSet
 
@@ -5832,7 +5835,7 @@ def _render_plan_view(plan, username, controls):
         og={
             "title": plan["name"],
             "description": plan["description"] or "Trainlog plan",
-            "image": external_url("og.plan_image", uuid=plan["uuid"], ext="jpg"),
+            "image": plan_og_image_url(plan["uuid"]),
         },
         num_hidden_trips=hidden_legs,
         colorblind=getattr(user, "colorblind", False) if user else False,
@@ -10018,6 +10021,8 @@ def user_settings(username):
                 setattr(user, param, params[param])
                 if param == "lang":
                     changeLang(params[param], session)
+        theme_module.save_settings(user, request.form, session["userinfo"])
+        session.modified = True
 
         authDb.session.commit()
 
@@ -10045,6 +10050,7 @@ def user_settings(username):
         friend_search_checked=friend_search_checked,
         appear_on_global_checked=appear_on_global_checked,
         colorblind_checked=colorblind_checked,
+        user_theme=user.theme,
         flight_3d_checked=flight_3d_checked,
         live_tracking_checked=live_tracking_checked,
         exact_waypoints_checked=exact_waypoints_checked,
@@ -12807,19 +12813,19 @@ def editManual(id):
                 new_data,
             )
             return redirect(url_for("adminManual"))
-        else:
-            station = pg.execute(
-                "SELECT * FROM manual_stations WHERE uid = :uid", {"uid": id}
-            ).fetchone()
-            return render_template(
-                "admin/edit_manual.html",
-                station=station,
-                username=session.get("logged_in"),
-                nav="bootstrap/navigation.html",
-                isCurrent=has_current_trip(get_user_id()),
-                **lang[session["userinfo"]["lang"]],
-                **session["userinfo"],
-            )
+        station = pg.execute(
+            "SELECT * FROM manual_stations WHERE uid = :uid", {"uid": id}
+        ).fetchone()
+    # Rendered outside the session: the layout queries the database itself
+    return render_template(
+        "admin/edit_manual.html",
+        station=station,
+        username=session.get("logged_in"),
+        nav="bootstrap/navigation.html",
+        isCurrent=has_current_trip(get_user_id()),
+        **lang[session["userinfo"]["lang"]],
+        **session["userinfo"],
+    )
 
 
 @app.errorhandler(405)
@@ -13743,11 +13749,14 @@ def visited_squares(username):
     else:
         nav = "bootstrap/public_nav.html"
 
+    viewer = User.query.filter_by(username=getUser()).first()
     return render_template(
         "visited_squares.html",
-        title="Visited Squares Map",
+        title=lang[session["userinfo"]["lang"]]["about_explore_squares_h"],
         username=username,
         nav=nav,
+        tileserver=viewer.tileserver if viewer else "osm",
+        globe=viewer.globe if viewer else False,
         **session["userinfo"],
         **lang[session["userinfo"]["lang"]],
     )
@@ -13757,10 +13766,9 @@ def visited_squares(username):
 @public_required
 def visited_squares_data(username):
     """Fetch the GeoJSON data for the visited squares."""
-    geojson_data, grid_geojson, land_percentage, air_percentage = generate_visited_squares_geojson(username)
+    geojson_data, land_percentage, air_percentage = generate_visited_squares_geojson(username)
     response = {
         "geojson": geojson_data,
-        "grid_geojson": grid_geojson,
         "land_percentage": land_percentage,
         "air_percentage": air_percentage,
     }
@@ -13812,147 +13820,6 @@ def active_users():
         **session["userinfo"],
     )
 
-
-def generate_visited_squares_geojson(username):
-    land_squares = set()
-    air_squares = set()
-    visited_squares = {}
-
-    with pg_session() as pg:
-        trips = pg.execute(
-            """
-                SELECT trip_id AS uid, trip_type AS type
-                FROM trips
-                WHERE user_id = :user_id
-                  AND NOT is_project
-                  AND (
-                        COALESCE(utc_start_datetime, start_datetime) IS NULL
-                        OR NOW() > COALESCE(utc_start_datetime, start_datetime)
-                      )
-            """,
-            {"user_id": get_user_id(username)},
-        ).fetchall()
-
-        for trip in trips:
-            trip_id = trip["uid"]
-            trip_type = trip["type"]
-
-            paths = [fetch_path(pg, trip_id)]
-
-            for coordinates in paths:
-                for i in range(len(coordinates)):
-                    lat, lon = coordinates[i]
-                    square = (math.floor(lat), math.floor(lon))
-
-                    if trip_type in ("air", "helicopter"):
-                        if (
-                            visited_squares.get(square) not in ("stopped", "passed")
-                            and square not in land_squares
-                        ):
-                            visited_squares[square] = "air"
-                            air_squares.add(square)
-                    else:
-                        if visited_squares.get(square) != "stopped":
-                            visited_squares[square] = "passed"
-                        land_squares.add(square)
-                        air_squares.discard(square)
-
-                    # Override with "stopped" on first/last point
-                    if i == 0 or i == len(coordinates) - 1:
-                        visited_squares[square] = "stopped"
-                        land_squares.add(square)
-                        air_squares.discard(square)
-
-                    # Interpolate between points (only for air trips)
-                    if (
-                        trip_type in ("air", "helicopter")
-                        and len(coordinates) > 2
-                        and i < len(coordinates) - 1
-                    ):
-                        next_lat, next_lon = coordinates[i + 1]
-                        intermediates = interpolate_great_circle(
-                            (lat, lon), (next_lat, next_lon), max_distance_km=50
-                        )
-
-                        for inter_lat, inter_lon in intermediates:
-                            inter_square = (
-                                math.floor(inter_lat),
-                                math.floor(inter_lon),
-                            )
-
-                            if (
-                                visited_squares.get(inter_square)
-                                not in ("stopped", "passed")
-                                and inter_square not in land_squares
-                            ):
-                                visited_squares[inter_square] = "air"
-                                air_squares.add(inter_square)
-
-    total_squares = 180 * 360  # entire world grid
-    land_percentage = (len(land_squares) / total_squares) * 100
-    air_percentage = (len(air_squares) / total_squares) * 100
-
-    with pg_session() as pg:
-        pg.execute(
-            upsert_percent_query(),
-            {
-                "username": username,
-                "cc": "world_squares",
-                "percent": round(land_percentage, 2),
-            },
-        )
-
-    # --- VISITED FEATURES ---
-    visited_features = []
-    for square, status in visited_squares.items():
-        lat, lon = square
-        feature = {
-            "type": "Feature",
-            "geometry": {
-                "type": "Polygon",
-                "coordinates": [[
-                    [lon, lat],
-                    [lon + 1, lat],
-                    [lon + 1, lat + 1],
-                    [lon, lat + 1],
-                    [lon, lat],
-                ]],
-            },
-            "properties": {"status": status},
-        }
-        visited_features.append(feature)
-
-    visited_geojson = {
-        "type": "FeatureCollection",
-        "features": visited_features
-    }
-
-    # --- FULL GRID FEATURES (ALL WORLD SQUARES) ---
-    grid_features = []
-
-    for lat in range(-90, 90):
-        for lon in range(-180, 180):
-            grid_features.append({
-                "type": "Feature",
-                "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [[
-                        [lon, lat],
-                        [lon + 1, lat],
-                        [lon + 1, lat + 1],
-                        [lon, lat + 1],
-                        [lon, lat],
-                    ]],
-                },
-                "properties": {}
-            })
-
-    grid_geojson = {
-        "type": "FeatureCollection",
-        "features": grid_features
-    }
-
-    return visited_geojson, grid_geojson, land_percentage, air_percentage
 
 @app.route("/tile/<style>/<x>/<y>/<z>/")
 @app.route("/tile/<style>/<x>/<y>/<z>/<r>")

@@ -34,6 +34,24 @@
         </div>
     </div>
 
+    <div class="control-group">
+        <div class="control-label year-label-row">
+            <label for="colorMode">{{ mapColorBy }}</label>
+            <button type="button" id="yearSpreadToggle" class="year-spread-toggle" title="{{ yearColorSpread }}" style="display: none;"
+                    onclick="document.getElementById('yearSpread').classList.toggle('open')"><i class="fa-solid fa-sliders"></i></button>
+        </div>
+        <div class="select-wrapper">
+            <select id="colorMode" onchange="updateColorMode()">
+                <option value="type">{{ mapColorByType }}</option>
+                <option value="year">{{ year }}</option>
+            </select>
+        </div>
+        <div id="yearSpread" class="year-spread">
+            <input type="range" min="0" max="1" step="0.05" oninput="MapLibreUtils.setYearSpread(this.value); updateColorMode()">
+            <div class="year-spread-ends"><span>{{ yearSpreadEven }}</span><span>{{ yearSpreadTravel }}</span></div>
+        </div>
+    </div>
+
     <div class="control-group" id="yearSelector" style="display: none;">
         <div class="control-label year-label-row">
             <label for="yearSelect">{{ selectYears }}</label>
@@ -64,6 +82,7 @@
     </button>
     <div class="legend-content" id="legendContent">
         <div class="legend-items">
+            <div id="typeLegend">
             <div class="legend-item">
                 <div class="legend-line" style="background-color: #52b0fe;"></div>
                 <span><i class="fa-solid fa-train"></i> {{ train }}</span>
@@ -120,6 +139,8 @@
                 <div class="legend-line" style="background-color: #b8e6f0;"></div>
                 <span><i class="fa-solid fa-person-skiing"></i> {{ ski }}</span>
             </div>
+            </div>
+            <div id="yearLegend" style="display: none;"></div>
             <div class="legend-separator"></div>
             <div class="legend-item">
                 <div class="legend-line future" style="background-color: rgba(255, 255, 255, 0.5);"></div>
@@ -181,7 +202,8 @@ const transportTypeLabels = {
     scooter: '{{ scooter }}',
     funicular: '{{ funicular }}',
     rail: '{{ rail }}',
-    ski: '{{ ski }}'
+    ski: '{{ ski }}',
+    other: '{{ other }}'
 };
 
 // Initialize map
@@ -363,6 +385,36 @@ function buildSliceLayers() {
     });
 }
 
+function tripYearColors() {
+    const counts = {};
+    trips.forEach(t => {
+        const start = t.trip.start_datetime;
+        if (start !== -1 && start !== 1) counts[start.substring(0, 4)] = (counts[start.substring(0, 4)] || 0) + 1;
+    });
+    return MapLibreUtils.yearColors(counts);
+}
+
+function applyColorMode() {
+    const byYear = document.getElementById('colorMode').value === 'year';
+    const colors = byYear ? tripYearColors() : null;
+    const lineColor = MapLibreUtils.tripLineColor(MapLibreUtils.MapConfig.transportTypes, colors);
+    SLICE_SOURCES.forEach(sourceId => {
+        if (map.getLayer(`${sourceId}-line`)) map.setPaintProperty(`${sourceId}-line`, 'line-color', lineColor);
+    });
+
+    const yearLegend = document.getElementById('yearLegend');
+    document.getElementById('typeLegend').style.display = byYear ? 'none' : '';
+    yearLegend.style.display = byYear ? '' : 'none';
+    yearLegend.innerHTML = byYear ? MapLibreUtils.yearLegendHtml(colors) : '';
+    document.getElementById('yearSpreadToggle').style.display = byYear ? '' : 'none';
+    document.getElementById('yearSpread').style.display = byYear ? '' : 'none';
+}
+
+function updateColorMode() {
+    if (layersBuilt) applyColorMode();
+    savePreferences();
+}
+
 // Current trips blink: their line opacity reads this feature-state
 let pulseTargets = [];
 let pulseOn = false;
@@ -389,6 +441,7 @@ function processTrips() {
         // have landed while the style was loading
         const years = tripYears;
         buildSliceLayers();
+        applyColorMode();
         layersBuilt = true;
 
         // Handle year selection defaults ONLY if no preferences were loaded
@@ -451,6 +504,7 @@ function applyTripUpdate() {
     prepareTrips();
     if (!layersBuilt) return;  // buildLayers is still waiting for the style and will use the new list
     updateSelectedYears();
+    applyColorMode();
     updateFilters();
     tripLoader.overview.ensure(trips);
 }
@@ -779,6 +833,7 @@ function hideLoading() {
 // Save preferences to cookies
 function savePreferences() {
     Cookies.set('viewMode', activeFilters.viewMode, { expires: 30 });
+    Cookies.set('colorMode', document.getElementById('colorMode').value, { expires: 30 });
     Cookies.set('yearSelect', Array.from(selectedYears).join(','), { expires: 30 });
     
     MapLibreUtils.MapConfig.transportTypes.forEach(type => {
@@ -797,6 +852,10 @@ function loadPreferences() {
         activeFilters.viewMode = savedViewMode;
     }
     
+    const savedColorMode = Cookies.get('colorMode');
+    if (savedColorMode) document.getElementById('colorMode').value = savedColorMode;
+    document.querySelector('#yearSpread input').value = MapLibreUtils.yearSpread();
+
     // Load selected years
     const savedYears = Cookies.get('yearSelect');
     if (savedYears && savedYears !== '') {

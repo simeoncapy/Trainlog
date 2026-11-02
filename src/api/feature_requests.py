@@ -92,6 +92,14 @@ def feature_requests(username=None):
             }
             request_list.append(request_dict)
 
+    if sort_by == "closed":
+        closed = sorted(
+            (r for r in request_list if r["closed_at"]),
+            key=lambda r: r["closed_at"],
+            reverse=True,
+        )
+        request_list = closed + [r for r in request_list if not r["closed_at"]]
+
     return render_template(
         "feature_requests.html",
         username=current_user,
@@ -158,7 +166,7 @@ def single_feature_request(request_id):
     return render_template(
         "single_feature_request.html",
         username=current_user,
-        request=request_dict,
+        feature_request=request_dict,
         **lang.get(userinfo.get("lang", "en"), {}),
         **userinfo,
         nav="bootstrap/navigation.html"
